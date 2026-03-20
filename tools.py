@@ -7,6 +7,7 @@ from typing import List
 
 load_dotenv()  # Add this — must be BEFORE create_client
 
+
 from supabase import create_client
 
 supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_ANON_KEY"))
@@ -200,6 +201,7 @@ def send_email_confirmation(to_email, to_name, booking_date,
                 "service_id": os.getenv("EMAILJS_SERVICE_ID"),
                 "template_id": os.getenv("EMAILJS_TEMPLATE_ID"),
                 "user_id": os.getenv("EMAILJS_PUBLIC_KEY"),
+                "accessToken": os.getenv("EMAILJS_PRIVATE_KEY"),
                 "template_params": {
                     "to_email": to_email,
                     "to_name": to_name,
