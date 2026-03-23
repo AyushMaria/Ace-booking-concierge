@@ -187,6 +187,114 @@ def get_my_bookings(phone: str) -> str:
 
     except Exception as e:
         return f"Error fetching bookings: {str(e)}"
+    
+
+@tool
+def get_all_bookings(booking_date: str) -> str:
+    """
+    Admin: Get all bookings for a specific date.
+    booking_date: YYYY-MM-DD format
+    """
+    try:
+        result = supabase.table("bookings") \
+            .select("*") \
+            .eq("booking_date", booking_date) \
+            .order("time_block") \
+            .execute()
+
+        if not result.data:
+            return f"No bookings found for {booking_date}."
+
+        lines = []
+        for b in result.data:
+            slots = b["slots"] if isinstance(b["slots"], list) else __import__('json').loads(b["slots"])
+            lines.append(
+                f"🆔 ID: {b['id']} | 👤 {b['name']} | 📞 {b['phone']} | "
+                f"⏰ {', '.join(slots)} | 💰 ₹{b['total_price']}"
+            )
+        return f"Bookings for {booking_date}:\n" + "\n".join(lines)
+
+    except Exception as e:
+        return f"Error fetching bookings: {str(e)}"
+
+
+@tool
+def delete_booking_by_id(booking_id: int) -> str:
+    """
+    Admin: Delete any booking by its ID.
+    """
+    try:
+        result = supabase.table("bookings") \
+            .select("id, name, booking_date") \
+            .eq("id", booking_id) \
+            .execute()
+
+        if not result.data:
+            return f"No booking found with ID {booking_id}."
+
+        b = result.data[0]
+        supabase.table("bookings").delete().eq("id", booking_id).execute()
+        return f"✅ Booking ID {booking_id} for {b['name']} on {b['booking_date']} has been deleted."
+
+    except Exception as e:
+        return f"Error deleting booking: {str(e)}"
+
+
+@tool
+def block_slots(booking_date: str, time_block: str, slots: List[str]) -> str:
+    """
+    Admin: Block specific slots on a date so customers can't book them.
+    booking_date: YYYY-MM-DD
+    time_block: 'morning', 'afternoon', or 'evening'
+    slots: list of slot strings to block
+    """
+    try:
+        supabase.table("bookings").insert({
+            "name": "BLOCKED",
+            "phone": "0000000000",
+            "email": "admin@vibeandvolley.com",
+            "booking_date": booking_date,
+            "time_block": time_block,
+            "slots": slots,
+            "promo_code": None,
+            "total_price": 0
+        }).execute()
+        return f"🚫 Slots blocked on {booking_date} ({time_block}): {', '.join(slots)}"
+
+    except Exception as e:
+        return f"Error blocking slots: {str(e)}"
+
+
+@tool
+def get_booking_stats() -> str:
+    """
+    Admin: Get total bookings count and revenue summary.
+    """
+    try:
+        result = supabase.table("bookings") \
+            .select("total_price, booking_date, name") \
+            .neq("name", "BLOCKED") \
+            .execute()
+
+        if not result.data:
+            return "No bookings found."
+
+        total_bookings = len(result.data)
+        total_revenue = sum(b["total_price"] for b in result.data)
+
+        today = date.today().isoformat()
+        today_bookings = [b for b in result.data if b["booking_date"] == today]
+
+        return (
+            f"📊 Booking Stats:\n"
+            f"📅 Total bookings: {total_bookings}\n"
+            f"💰 Total revenue: ₹{total_revenue}\n"
+            f"🏸 Today's bookings: {len(today_bookings)}"
+        )
+
+    except Exception as e:
+        return f"Error fetching stats: {str(e)}"
+
 
 
 def send_email_confirmation(to_email, to_name, booking_date,
