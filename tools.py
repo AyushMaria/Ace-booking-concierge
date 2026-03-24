@@ -372,6 +372,84 @@ def get_bookings_by_name(names: List[str]) -> str:
         return f"Error fetching bookings: {str(e)}"
 
 
+@tool
+def create_promo_code(
+    code: str,
+    discount_type: str,
+    discount_value: float,
+    min_slots: int = 2,
+    max_uses: int = None,
+    expires_at: str = None
+) -> str:
+    """
+    Admin: Create a new promo code.
+    code: promo code string e.g. 'SUMMER50'
+    discount_type: 'flat' (₹ off) or 'percent' (% off)
+    discount_value: amount or percentage
+    min_slots: minimum slots required (default 2 = 1 hour)
+    max_uses: max number of times it can be used (None = unlimited)
+    expires_at: expiry date in YYYY-MM-DD format (None = no expiry)
+    """
+    try:
+        supabase.table("promo_codes").insert({
+            "code": code.upper(),
+            "discount_type": discount_type,
+            "discount_value": discount_value,
+            "min_slots": min_slots,
+            "max_uses": max_uses,
+            "expires_at": expires_at
+        }).execute()
+        return (
+            f"✅ Promo code *{code.upper()}* created!\n"
+            f"💰 Discount: {'₹' if discount_type == 'flat' else ''}{discount_value}{'%' if discount_type == 'percent' else ' off'}\n"
+            f"⏱ Min slots: {min_slots} | Max uses: {max_uses or 'Unlimited'} | Expires: {expires_at or 'Never'}"
+        )
+    except Exception as e:
+        return f"Error creating promo code: {str(e)}"
+
+
+@tool
+def edit_booking(
+    booking_id: int,
+    new_date: str = None,
+    new_slots: List[str] = None,
+    new_name: str = None,
+    new_phone: str = None,
+    new_email: str = None
+) -> str:
+    """
+    Admin: Edit an existing booking by ID. Only provided fields will be updated.
+    booking_id: ID of the booking to edit
+    new_date: new date in YYYY-MM-DD format (optional)
+    new_slots: new list of slot strings (optional)
+    new_name: updated customer name (optional)
+    new_phone: updated phone number (optional)
+    new_email: updated email address (optional)
+    """
+    try:
+        existing = supabase.table("bookings") \
+            .select("*").eq("id", booking_id).execute()
+
+        if not existing.data:
+            return f"No booking found with ID {booking_id}."
+
+        updates = {}
+        if new_date: updates["booking_date"] = new_date
+        if new_slots: updates["slots"] = new_slots
+        if new_name: updates["name"] = new_name
+        if new_phone: updates["phone"] = new_phone
+        if new_email: updates["email"] = new_email
+
+        if not updates:
+            return "No changes provided."
+
+        supabase.table("bookings").update(updates).eq("id", booking_id).execute()
+        return f"✅ Booking ID {booking_id} updated successfully.\nChanges: {updates}"
+
+    except Exception as e:
+        return f"Error editing booking: {str(e)}"
+
+
 
 
 def send_email_confirmation(to_email, to_name, booking_date,

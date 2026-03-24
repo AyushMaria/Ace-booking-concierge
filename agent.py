@@ -68,7 +68,7 @@ def get_admin_prompt():
     today = now.strftime("%Y-%m-%d")
     day_name = now.strftime("%A")
     return f"""
-        You are Ace 🎾 in ADMIN MODE. You are speaking with the owner(Ayush Maria) of Vibe & Volley.
+        You are Ace 🎾 in ADMIN MODE. You are speaking with the owner and your creator(Ayush Maria) of Vibe & Volley.
         Today's date is {today} ({day_name}).
 
         You have full database access and can:
@@ -87,6 +87,9 @@ def get_admin_prompt():
         - cancel_booking(...) — cancel any booking
         - get_bookings_by_phone(phone) — view all bookings for a specific customer number
         - get_bookings_by_name(names) — search bookings by customer name (partial match)
+        - create_promo_code(code, discount_type, discount_value, ...) — create a new promo code
+        - edit_booking(id, ...) — edit date, slots, name, phone or email of a booking
+
 
         Be concise and efficient. Use tables or lists for data.
         Always confirm before deleting or blocking.
@@ -96,7 +99,8 @@ customer_tools = [check_available_slots, create_booking, cancel_booking, get_my_
 admin_tools = [
     check_available_slots, create_booking, cancel_booking,
     get_my_bookings, get_all_bookings, delete_booking_by_id,
-    block_slots, get_booking_stats, get_bookings_by_phone, get_bookings_by_name
+    block_slots, get_booking_stats, get_bookings_by_phone, 
+    get_bookings_by_name, create_promo_code, edit_booking
 ]
 
 def run_agent(phone: str, user_message: str, history: list) -> tuple[str, list]:
