@@ -432,7 +432,7 @@ def create_promo_code(
     code: promo code string e.g. 'SUMMER50'
     discount_type: 'flat' (₹ off) or 'percent' (% off)
     discount_value: amount or percentage
-    min_slots: minimum slots required (default 2 = 1 hour)
+    min_slots: minimum slots required (default 1 = Half hour)
     max_uses: max number of times it can be used (None = unlimited)
     expires_at: expiry date in YYYY-MM-DD format (None = no expiry)
     valid_slots: list of slot strings this promo is restricted to (None = no restriction)
