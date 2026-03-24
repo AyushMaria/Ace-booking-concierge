@@ -127,8 +127,16 @@ def create_booking(
                         f"{', '.join(p['valid_slots'])}"
                     )
 
-            if p["max_uses"] and p["uses_count"] >= p["max_uses"]:
-                return "❌ This promo code has reached its usage limit."
+            # Per phone max uses check
+            if p["max_uses_per_phone"]:
+                usage = supabase.table("promo_usage") \
+                    .select("id") \
+                    .eq("promo_code", promo_code.upper()) \
+                    .eq("phone", phone) \
+                    .execute()
+
+                if len(usage.data) >= p["max_uses_per_phone"]:
+                    return f"❌ You've already used this promo code the maximum number of times allowed."
 
             if p["discount_type"] == "flat":
                 total_price = max(0, total_price - p["discount_value"])
@@ -137,11 +145,11 @@ def create_booking(
 
             price_display = f"₹{total_price}"
 
-            # Increment uses_count
-            supabase.table("promo_codes") \
-                .update({"uses_count": p["uses_count"] + 1}) \
-                .eq("code", promo_code.upper()) \
-                .execute()
+            # Log usage
+            supabase.table("promo_usage").insert({
+                "promo_code": promo_code.upper(),
+                "phone": phone
+            }).execute()
 
         # Insert booking
         supabase.table("bookings").insert({
@@ -371,7 +379,6 @@ def get_bookings_by_phone(phones: List[str]) -> str:
     
 
 
-
 @tool
 def get_bookings_by_name(names: List[str]) -> str:
     """
@@ -422,7 +429,7 @@ def create_promo_code(
     discount_type: str,
     discount_value: float,
     min_slots: int = 2,
-    max_uses: int = None,
+    max_uses_per_phone: int = None,
     expires_at: str = None,
     valid_slots: List[str] = None,
     weekends_only: bool = False
@@ -433,7 +440,7 @@ def create_promo_code(
     discount_type: 'flat' (₹ off) or 'percent' (% off)
     discount_value: amount or percentage
     min_slots: minimum slots required (default 1 = Half hour)
-    max_uses: max number of times it can be used (None = unlimited)
+    max_uses_per_phone: max number of times it can be used per phone number(None = unlimited)
     expires_at: expiry date in YYYY-MM-DD format (None = no expiry)
     valid_slots: list of slot strings this promo is restricted to (None = no restriction)
     weekends_only: if True, promo is only valid on Saturdays and Sundays
@@ -444,7 +451,7 @@ def create_promo_code(
             "discount_type": discount_type,
             "discount_value": discount_value,
             "min_slots": min_slots,
-            "max_uses": max_uses,
+            "max_uses_per_phone": max_uses_per_phone,
             "expires_at": expires_at,
             "valid_slots": valid_slots,
             "weekends_only": weekends_only
