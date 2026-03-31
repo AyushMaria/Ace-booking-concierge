@@ -31,6 +31,18 @@ def check_available_slots(booking_date: str, time_block: str) -> str:
     time_block: 'morning', 'afternoon', or 'evening'
     """
     try:
+        ist = pytz.timezone("Asia/Kolkata")
+        now = datetime.now(ist)
+        today = now.strftime("%Y-%m-%d")
+
+        # Block morning slots for tomorrow if request is made after 11 PM
+        if (time_block == "morning" and
+            now.hour >= 23 and
+            booking_date == (now + __import__('timedelta', fromlist=['timedelta']).timedelta(days=1)).strftime("%Y-%m-%d")
+        ):
+            return "Morning slots for tomorrow are not available for booking after 11:00 PM. Please consider afternoon (4:00 PM onwards) or evening slots."
+
+    try:
         response = supabase.table("bookings") \
             .select("slots") \
             .eq("booking_date", booking_date) \
@@ -470,7 +482,6 @@ def create_promo_code(
     except Exception as e:
         return f"Error creating promo code: {str(e)}"
 
-
 @tool
 def edit_booking(
     booking_id: int,
@@ -482,6 +493,7 @@ def edit_booking(
 ) -> str:
     """
     Admin: Edit an existing booking by ID. Only provided fields will be updated.
+    Automatically recalculates total price if slots are changed.
     booking_id: ID of the booking to edit
     new_date: new date in YYYY-MM-DD format (optional)
     new_slots: new list of slot strings (optional)
@@ -496,23 +508,66 @@ def edit_booking(
         if not existing.data:
             return f"No booking found with ID {booking_id}."
 
+        b = existing.data[0]
         updates = {}
+
         if new_date: updates["booking_date"] = new_date
-        if new_slots: updates["slots"] = new_slots
         if new_name: updates["name"] = new_name
         if new_phone: updates["phone"] = new_phone
         if new_email: updates["email"] = new_email
+
+        # Recalculate price if slots are changing
+        if new_slots:
+            updates["slots"] = new_slots
+            base_price = len(new_slots) * 250
+            new_total = base_price
+
+            # Re-apply promo code if one was used on the original booking
+            promo_code = b.get("promo_code")
+            if promo_code:
+                promo = supabase.table("promo_codes") \
+                    .select("*") \
+                    .eq("code", promo_code.upper()) \
+                    .eq("active", True) \
+                    .execute()
+
+                if promo.data:
+                    p = promo.data[0]
+
+                    # Check min slots still satisfied
+                    if len(new_slots) < p["min_slots"]:
+                        promo_warning = (
+                            f"\n⚠️ Promo code {promo_code.upper()} requires at least {p['min_slots']} slots "
+                            f"({p['min_slots'] * 30} mins minimum) — it has not been applied. "
+                            f"Full price of ₹{base_price} applies."
+                        )
+                    else:
+                        if p["discount_type"] == "flat":
+                            new_total = max(0, base_price - p["discount_value"])
+                        elif p["discount_type"] == "percent":
+                            new_total = round(base_price * (1 - p["discount_value"] / 100))
+                    # If new slots don't meet min_slots, promo is dropped silently
+
+            updates["total_price"] = new_total
 
         if not updates:
             return "No changes provided."
 
         supabase.table("bookings").update(updates).eq("id", booking_id).execute()
-        return f"✅ Booking ID {booking_id} updated successfully.\nChanges: {updates}"
+
+        # Build a readable summary
+        old_slots = b["slots"] if isinstance(b["slots"], list) else __import__('json').loads(b["slots"])
+        old_price = b["total_price"]
+        new_price = updates.get("total_price", old_price)
+        slot_summary = (
+            f"\n🔄 Slots: {', '.join(old_slots)} → {', '.join(new_slots)}"
+            f"\n💰 Price: ₹{old_price} → ₹{new_price}"
+        ) if new_slots else ""
+
+        return f"✅ Booking ID {booking_id} updated successfully.{slot_summary}{promo_warning}"
 
     except Exception as e:
         return f"Error editing booking: {str(e)}"
-
-
 
 
 def send_email_confirmation(to_email, to_name, booking_date,

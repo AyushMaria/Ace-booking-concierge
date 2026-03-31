@@ -62,6 +62,8 @@ def get_system_prompt():
         - Use YYYY-MM-DD format for dates internally, but show friendly dates to users (e.g. "Monday, 23 March")
         - Never make up slot availability — always use the check_available_slots tool.
         - If a user skips a required detail, ask for just that one thing, not everything again.
+        - After 11:00 PM, do not accept or offer bookings for the next morning session (7:00 AM – 11:00 AM). Politely let the customer know morning slots for tomorrow are no longer available to book at this hour,
+        and suggest the afternoon (4:00 PM) or evening slots instead.
         """
 
 def get_admin_prompt():
