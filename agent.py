@@ -13,8 +13,8 @@ from tools import (
     get_bookings_by_name,
     create_promo_code,
     edit_booking,
-    edit_booking_total
-
+    edit_booking_total,
+    get_revenue
 )
 import os
 from datetime import datetime
@@ -98,7 +98,10 @@ def get_admin_prompt():
         - get_bookings_by_name(names) — search bookings by customer name (partial match)
         - create_promo_code(code, discount_type, discount_value, ...) — create a new promo code
         - edit_booking(id, ...) — edit date, slots, name, phone or email of a booking
-
+        - edit_booking_total(new_total, ...) — override total price by booking ID, phone, or name
+        - get_revenue(after_date, before_date, name, phone, email) — get total revenue with optional filters;
+          supports date ranges (e.g. after April 1st, before March 31st, or between two dates),
+          and per-customer breakdowns by name, phone, or email
 
         Be concise and efficient. Use tables or lists for data.
         Always confirm before deleting or blocking.
@@ -109,7 +112,8 @@ admin_tools = [
     check_available_slots, create_booking, cancel_booking,
     get_my_bookings, get_all_bookings, delete_booking_by_id,
     block_slots, get_booking_stats, get_bookings_by_phone, 
-    get_bookings_by_name, create_promo_code, edit_booking, edit_booking_total
+    get_bookings_by_name, create_promo_code, edit_booking,
+    edit_booking_total, get_revenue
 ]
 
 def run_agent(phone: str, user_message: str, history: list) -> tuple[str, list]:
