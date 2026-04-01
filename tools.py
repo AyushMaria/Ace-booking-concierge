@@ -560,7 +560,6 @@ def edit_booking(
                             new_total = max(0, base_price - p["discount_value"])
                         elif p["discount_type"] == "percent":
                             new_total = round(base_price * (1 - p["discount_value"] / 100))
-                    # If new slots don't meet min_slots, promo is dropped silently
 
             updates["total_price"] = new_total
 
@@ -684,3 +683,89 @@ def edit_booking_total(
     except Exception as e:
         return f"Error updating totals: {str(e)}"
 
+
+@tool
+def get_revenue(
+    after_date: str = None,
+    before_date: str = None,
+    name: str = None,
+    phone: str = None,
+    email: str = None
+) -> str:
+    """
+    Admin: Get total revenue filtered by date range, customer name, phone, or email.
+    Filters can be combined (e.g. after_date + before_date for a range).
+    after_date: YYYY-MM-DD — revenue from this date onwards (inclusive)
+    before_date: YYYY-MM-DD — revenue up to this date (inclusive)
+    name: customer name (partial match supported)
+    phone: customer phone number
+    email: customer email address
+    """
+    try:
+        if not any([after_date, before_date, name, phone, email]):
+            return "❌ Please provide at least one filter: after_date, before_date, name, phone, or email."
+
+        query = supabase.table("bookings") \
+            .select("id, name, phone, email, booking_date, total_price") \
+            .neq("name", "BLOCKED")
+
+        if after_date:
+            query = query.gte("booking_date", after_date)
+        if before_date:
+            query = query.lte("booking_date", before_date)
+        if phone:
+            clean_phone = phone.replace("+91", "").replace(" ", "").strip()
+            query = query.eq("phone", clean_phone)
+        if email:
+            query = query.eq("email", email)
+
+        result = query.execute()
+        data = result.data
+
+        # Apply name filter in Python (partial match)
+        if name:
+            data = [b for b in data if name.lower() in b["name"].lower()]
+
+        if not data:
+            return "No bookings found for the given filters."
+
+        total_revenue = sum(b["total_price"] for b in data)
+        total_bookings = len(data)
+
+        # Build filter description
+        filters = []
+        if after_date:  filters.append(f"from {after_date}")
+        if before_date: filters.append(f"until {before_date}")
+        if name:        filters.append(f"name matching '{name}'")
+        if phone:       filters.append(f"phone {phone}")
+        if email:       filters.append(f"email {email}")
+        filter_desc = " | ".join(filters)
+
+        # Breakdown logic
+        breakdown = ""
+        if not phone and not email and not name:
+            # Date-only filter — daily breakdown
+            from collections import defaultdict
+            daily = defaultdict(int)
+            for b in data:
+                daily[b["booking_date"]] += b["total_price"]
+            breakdown = "\n\n📆 Daily breakdown:\n" + \
+                "\n".join(f"  {d}: ₹{a}" for d, a in sorted(daily.items()))
+        else:
+            # Person filter — per-booking detail
+            breakdown = "\n\n🧾 Bookings:\n" + \
+                "\n".join(
+                    f"  🆔 {b['id']} | 📅 {b['booking_date']} | 💰 ₹{b['total_price']}"
+                    for b in sorted(data, key=lambda x: x["booking_date"])
+                )
+
+        return (
+            f"📊 Revenue Report\n"
+            f"🔍 Filters: {filter_desc}\n"
+            f"📦 Bookings: {total_bookings}\n"
+            f"💰 Total Revenue: ₹{total_revenue}"
+            f"{breakdown}"
+        )
+
+    except Exception as e:
+        return f"Error fetching revenue: {str(e)}"
