@@ -773,3 +773,65 @@ def get_revenue(
 
     except Exception as e:
         return f"Error fetching revenue: {str(e)}"
+
+
+@tool
+def edit_promo_code(
+    code: str,
+    new_code: str = None,
+    discount_type: str = None,
+    discount_value: float = None,
+    min_slots: int = None,
+    max_uses_per_phone: int = None,
+    expires_at: str = None,
+    valid_slots: List[str] = None,
+    weekends_only: bool = None,
+    active: bool = None
+) -> str:
+    """
+    Admin: Edit an existing promo code. Only provided fields will be updated.
+    code: the existing promo code to edit (e.g. 'VIBESLOT')
+    new_code: rename the promo code (optional)
+    discount_type: 'flat' or 'percent' (optional)
+    discount_value: new discount amount or percentage (optional)
+    min_slots: minimum slots required (optional)
+    max_uses_per_phone: max uses per phone number, None = unlimited (optional)
+    expires_at: new expiry date in YYYY-MM-DD format, None = no expiry (optional)
+    valid_slots: list of slot strings to restrict to, None = no restriction (optional)
+    weekends_only: True/False (optional)
+    active: True to activate, False to deactivate (optional)
+    """
+    try:
+        existing = supabase.table("promo_codes") \
+            .select("*") \
+            .eq("code", code.upper()) \
+            .execute()
+
+        if not existing.data:
+            return f"❌ No promo code found with code '{code.upper()}'."
+
+        updates = {}
+        if new_code is not None:        updates["code"] = new_code.upper()
+        if discount_type is not None:   updates["discount_type"] = discount_type
+        if discount_value is not None:  updates["discount_value"] = discount_value
+        if min_slots is not None:       updates["min_slots"] = min_slots
+        if max_uses_per_phone is not None: updates["max_uses_per_phone"] = max_uses_per_phone
+        if expires_at is not None:      updates["expires_at"] = expires_at
+        if valid_slots is not None:     updates["valid_slots"] = valid_slots
+        if weekends_only is not None:   updates["weekends_only"] = weekends_only
+        if active is not None:          updates["active"] = active
+
+        if not updates:
+            return "⚠️ No changes provided."
+
+        supabase.table("promo_codes") \
+            .update(updates) \
+            .eq("code", code.upper()) \
+            .execute()
+
+        changed = ", ".join(f"{k} → {v}" for k, v in updates.items())
+        display_code = updates.get("code", code.upper())
+        return f"✅ Promo code *{display_code}* updated successfully.\n📝 Changes: {changed}"
+
+    except Exception as e:
+        return f"Error editing promo code: {str(e)}"
