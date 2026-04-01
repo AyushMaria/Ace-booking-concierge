@@ -78,7 +78,8 @@ def create_booking(
     time_block: str,
     slots: List[str], 
     promo_code: str = "",
-    paddle_rental: int = 0
+    paddle_rental: int = 0,
+    payment_mode: str = None
     ) -> str:
 
     """
@@ -182,7 +183,8 @@ def create_booking(
             "slots": slots,
             "promo_code": promo_code or None,
             "total_price": total_price,
-            "paddle_rental": paddle_rental
+            "paddle_rental": paddle_rental,
+            "payment_mode": payment_mode
         }).execute()
 
         # Send email confirmation
@@ -198,6 +200,7 @@ def create_booking(
         )
 
         paddle_line = f"\n🏓 Premium Paddles: {paddle_rental} (₹{paddle_cost})" if paddle_rental else ""
+        payment_line = f"\n💳 Payment: {payment_mode} (pay after you play)" if payment_mode else ""
 
         return (
             f"✅ Booking confirmed!\n"
@@ -205,6 +208,7 @@ def create_booking(
             f"⏰ Slots: {', '.join(slots)}\n"
             f"{paddle_line}"
             f"💰 Price: {price_display}\n"
+            f"{paddle_line}"
             f"📧 Confirmation sent to {email}"
         )
 

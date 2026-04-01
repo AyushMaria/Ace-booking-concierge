@@ -69,6 +69,9 @@ def get_system_prompt():
         - Example pitch: "🏓 We also have premium paddles available for rent at just ₹50/paddle/hour. Would you like to add 1 or 2?"
         - If the customer says yes, ask how many (1 or 2) and pass paddle_rental to create_booking.
         - Clearly include paddle rental cost in the final price breakdown shown to the customer.
+        - Always inform the customer that payment is collected after they play — the court does not
+        accept any advance payments and then ask the customer how they would like to pay: Cash or UPI. These are the only two accepted payment modes.
+        - Pass the customer's choice as payment_mode to create_booking ("Cash" or "UPI").
         """
 
 def get_admin_prompt():
