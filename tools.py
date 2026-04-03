@@ -521,6 +521,7 @@ def edit_booking(
 
         b = existing.data[0]
         updates = {}
+        promo_warning = ""
 
         if new_date:  updates["booking_date"] = new_date
         if new_name:  updates["name"] = new_name
@@ -589,7 +590,7 @@ def edit_booking(
         price_info = f"\n💰 Price: ₹{old_price} → ₹{new_price}" if "total_price" in updates else ""
         promo_info = f"\n🎟️ Promo: {updates['promo_code'] or 'None'}" if "promo_code" in updates else ""
 
-        return f"✅ Booking ID {booking_id} updated.{price_info}{promo_info}{promo_warning if 'promo_warning' in dir() else ''}"
+        return f"✅ Booking ID {booking_id} updated.{price_info}{promo_info}{promo_warning}"
 
     except Exception as e:
         return f"Error editing booking: {str(e)}"
