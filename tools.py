@@ -1,13 +1,13 @@
 from supabase import create_client
 from langchain_core.tools import tool
-from datetime import date
+from datetime import date, datetime, timedelta
 import os, httpx
 from dotenv import load_dotenv
 from typing import List
+import pytz
 
 load_dotenv()  
 
-from supabase import create_client
 
 supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_ANON_KEY"))
 
@@ -38,7 +38,7 @@ def check_available_slots(booking_date: str, time_block: str) -> str:
         # Block morning slots for tomorrow if request is made after 11 PM
         if (time_block == "morning" and
             now.hour >= 23 and
-            booking_date == (now + __import__('timedelta', fromlist=['timedelta']).timedelta(days=1)).strftime("%Y-%m-%d")
+            booking_date == (now + timedelta(days=1)).strftime("%Y-%m-%d")
         ):
             return "Morning slots for tomorrow are not available for booking after 11:00 PM. Please consider afternoon (4:00 PM onwards) or evening slots."
 
