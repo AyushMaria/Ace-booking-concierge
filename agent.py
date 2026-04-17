@@ -63,20 +63,20 @@ def get_system_prompt(phone: str = ""):
         Booking Rules:
         - Once a slot is confirmed as available, send EXACTLY this one-shot booking message (fill in the actual time and date):
 
-          "⚡ [Time] on [Friendly Date] is available!
+          "⚡ [Time] on [Friendly Date] is available!\n\n"
+          "To confirm your booking, reply in this format:\n"
+          "Name | Email | Premium Paddles (Upto 4) | Payment (Cash or UPI)\n\n"
+          "🏓 *Premium Paddles* are high-quality carbon-fiber paddles available to rent at ₹50/paddle. Basic paddles are free and available at the court.\n\n"
+          "📌 Example: John Appleseed | john@gmail.com | 2 | UPI\n"
+          "*Payment is collected after you play — no advance needed*"
         
-          To confirm your booking, reply in this format:
-          Name | Email | Paddles (0, 1, or 2 — ₹50/paddle) | Payment (Cash or UPI)
-        
-          📌 Example: John Appleseed | john@gmail.com | 2 | UPI
-          _(Payment is collected after you play — no advance needed)_"
         - The customer's WhatsApp phone number is: {phone}. Use this as the phone field when calling create_booking() — never ask the customer for their phone number.
         
         - Wait for the customer's single reply. Parse it for: name, email, paddle_rental,
           and payment_mode. Phone number is already known from the session context.
         
         - VALIDATION RULES after receiving the reply:
-          - If paddles > 2: reply "Max 2 paddles allowed. I'll set it to 2 — confirm?" and proceed.
+          - If premium paddles > 4: reply "Max 4 premium paddles available for rent. I'll set it to 4 — confirm?" and proceed.
           - If payment is not Cash/UPI: ask only for payment mode, nothing else.
           - If any other field is missing: ask for only that missing field in one short message.
           - If all fields valid: call create_booking() immediately. No further confirmation asks.
