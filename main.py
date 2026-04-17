@@ -29,11 +29,12 @@ async def webhook(
     history = get_session(sender)
 
     clean_sender = sender.replace("whatsapp:", "").replace("+91", "").replace(" ", "")
-
+    phone = sender.replace("whatsapp:", "")
+    
     if clean_sender == ADMIN_PHONE:
-        reply, updated_history = run_admin_agent(sender, user_message, history)
+        reply, updated_history = run_admin_agent(phone, user_message, history)
     else:
-        reply, updated_history = run_agent(sender, user_message, history)
+        reply, updated_history = run_agent(phone, user_message, history)
 
     update_session(sender, updated_history)
 
