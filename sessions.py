@@ -9,3 +9,5 @@ def update_session(phone: str, messages: list):
 
 def clear_session(phone: str):
     sessions.pop(phone, None)
+
+

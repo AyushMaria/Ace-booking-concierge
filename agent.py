@@ -1,22 +1,11 @@
 from langgraph.prebuilt import create_react_agent
 from langchain_google_genai import ChatGoogleGenerativeAI
 from tools import (
-    check_available_slots,
-    create_booking,
-    cancel_booking,
-    get_my_bookings,
-    get_all_bookings,
-    delete_booking_by_id,
-    block_slots,
-    get_booking_stats,
-    get_bookings_by_phone, 
-    get_bookings_by_name,
-    create_promo_code,
-    edit_booking,
-    edit_booking_total,
-    get_revenue,
-    edit_promo_code,
-    add_paddle_rental
+    check_available_slots, create_booking, cancel_booking, get_my_bookings,
+    get_all_bookings, delete_booking_by_id, block_slots, get_booking_stats,
+    get_bookings_by_phone, get_bookings_by_name, create_promo_code, edit_booking,
+    edit_booking_total, get_revenue, edit_promo_code, add_paddle_rental,
+    get_customer_by_phone,create_customer_profile
 )
 import os
 from datetime import datetime
@@ -60,6 +49,31 @@ def get_system_prompt(phone: str = ""):
         - Use light emojis where appropriate 🏸 but don't overdo it.
         - Celebrate bookings with a little enthusiasm ("You're all set! 🎉").
         - If slots are taken, sympathize briefly and suggest nearby alternatives right away.
+
+        CUSTOMER IDENTITY (Run at the start of EVERY conversation):
+        1. Silently call get_customer_by_phone(phone={phone}) before responding to anything.
+
+        - IF found=True (returning customer with saved profile):
+            - You already know their name and email. Do NOT ask for them.
+            - Greet them by first name: "Welcome back, [First Name]! 👋"
+            - Proceed directly to the one-shot booking message with ONLY:
+            "Payment (Cash or UPI)"
+            (Name and Email are already known — exclude them from the format)
+            - Example one-shot for returning customer:
+            "⚡ [Time] on [Date] is available!
+            To confirm, reply: Payment (Cash or UPI)
+            Example: UPI"
+
+        - IF found=False (new customer, no saved profile):
+            - Proceed with the full one-shot booking message including Name and Email:
+            "⚡ [Time] on [Date] is available!
+            To confirm, reply: Name | Email | Premium Paddles (0/1/2) | Payment (Cash or UPI)
+            Example: Chetan Patni | chetan@gmail.com | 0 | UPI"
+            - After create_booking() succeeds for a NEW customer (found=False):
+                1. Immediately call create_customer_profile(phone={phone}, name=<name>, email=<email>)
+                using the name and email already collected in the one-shot reply.
+                2. Do this SILENTLY — do not tell the customer their profile is being saved.
+                3. Then send the booking confirmation + [SPLIT] paddle message as normal.
 
         Booking Rules:
         - Once a slot is confirmed as available, send EXACTLY this one-shot booking message (fill in the actual time and date):
@@ -148,13 +162,18 @@ def get_admin_prompt():
         Always confirm before deleting or blocking.
         """
 
-customer_tools = [check_available_slots, create_booking, cancel_booking, get_my_bookings, add_paddle_rental]
+customer_tools = [
+    check_available_slots, create_booking, cancel_booking, 
+    get_my_bookings, add_paddle_rental, get_customer_by_phone, 
+    create_customer_profile
+]
+
 admin_tools = [
     check_available_slots, create_booking, cancel_booking,
     get_my_bookings, get_all_bookings, delete_booking_by_id,
     block_slots, get_booking_stats, get_bookings_by_phone, 
     get_bookings_by_name, create_promo_code, edit_booking,
-    edit_booking_total, get_revenue, edit_promo_code
+    edit_booking_total, get_revenue, edit_promo_code, get_customer_by_phone
 ]
 
 def run_agent(phone: str, user_message: str, history: list) -> tuple[str, list]:

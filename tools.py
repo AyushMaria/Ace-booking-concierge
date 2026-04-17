@@ -857,3 +857,23 @@ def add_paddle_rental(booking_id: str, paddle_count: int) -> dict:
     }).eq("id", booking_id).execute()
 
     return {"success": True}
+
+
+@tool
+def get_customer_by_phone(phone: str) -> dict:
+    """Look up a customer's saved profile using their phone number.
+    Returns name and email if found, or indicates they are a new customer."""
+    result = supabase.table("customers").select("name, email").eq("phone", phone).execute()
+    if result.data:
+        return {"found": True, "name": result.data[0]["name"], "email": result.data[0]["email"]}
+    return {"found": False}
+
+@tool
+def create_customer_profile(phone: str, name: str, email: str) -> dict:
+    """Save a new customer's profile to the customers table."""
+    result = supabase.table("customers").insert({
+        "phone": phone,
+        "name": name,
+        "email": email
+    }).execute()
+    return {"success": True}
