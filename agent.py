@@ -90,7 +90,7 @@ def get_system_prompt():
            Paddles: [X] | Total: ₹[Amount] | Pay via [Mode] after you play. See you! 🏓"
         """
 
-def get_admin_prompt():
+def get_admin_prompt(phone: str = ""):
     ist = pytz.timezone("Asia/Kolkata")
     now = datetime.now(ist)
     today = now.strftime("%Y-%m-%d")
