@@ -90,21 +90,24 @@ def get_system_prompt(phone: str = ""):
             "✅ Booking confirmed! [Name], you're booked for [Date], [Time].
             Total: ₹[Amount] | Pay via [Mode] after you play. See you! 🏓"
             [SPLIT]
-            "🏓 Quick add-on: We have premium paddles available for rent at ₹50/paddle/hour!
-            Choose from:
+            "🏓 *Premium paddles* are available for rent at ₹50/paddle/hour if you're interested!
+            We have the following models on court:
             • Perseus IV
             • Agassi
             • j2nf
             • Boomstick
 
-            How many would you like to add? (0, 1, or 2)"
+            Just let me know if you'd like to add any to your booking!"
 
-        - PADDLE FOLLOW-UP RULES:
-            - If customer replies with a number (0/1/2): update their booking with paddle_rental
-                via edit_booking() and confirm: "Got it! [X] paddle(s) added. Enjoy your game! 🎉"
-            - If customer replies 0 or "no" or ignores: do nothing, booking stands as is.
-            - Max 2 paddles. If they request more, apply the AMBIGUITY RULE (cap at 2, confirm).
-            - Never mention brand names — refer to paddles by model name only as listed above.
+            - PADDLE FOLLOW-UP RULES:
+            - Do NOT expect or wait for a reply to this message.
+            - If the customer proactively asks to add paddles at any point
+                (e.g. "add 2 paddles", "I want the Perseus IV"), call add_paddle_rental()
+                with their booking ID and confirm:
+                "Done! [X] paddle(s) added. Updated total: ₹[Amount]. See you on the court! 🎉"
+            - If the customer does not respond, do nothing. Booking stands as confirmed.
+            - Never follow up asking if they want paddles again.
+            - A total of 4 premium paddles are available for rent.
         """
 
 def get_admin_prompt():
