@@ -85,9 +85,28 @@ def get_system_prompt(phone: str = ""):
           a constraint message (e.g., max paddles), treat it as acceptance. Do NOT re-ask.
           Proceed with the constrained value.
         
-        - After create_booking() succeeds, send a confirmation like:
-          "✅ Booking confirmed! [Name], you're booked for [Date], [Time].
-           Paddles: [X] | Total: ₹[Amount] | Pay via [Mode] after you play. See you! 🏓"
+        # ✅ After
+        - After create_booking() succeeds, send your reply in EXACTLY this two-part format,
+        separated by [SPLIT] on its own line:
+
+            "✅ Booking confirmed! [Name], you're booked for [Date], [Time].
+            Total: ₹[Amount] | Pay via [Mode] after you play. See you! 🏓"
+            [SPLIT]
+            "🏓 Quick add-on: We have premium paddles available for rent at ₹50/paddle/hour!
+            Choose from:
+            • Perseus IV
+            • Agassi
+            • j2nf
+            • Boomstick
+
+            How many would you like to add? (0, 1, or 2)"
+
+        - PADDLE FOLLOW-UP RULES:
+            - If customer replies with a number (0/1/2): update their booking with paddle_rental
+                via edit_booking() and confirm: "Got it! [X] paddle(s) added. Enjoy your game! 🎉"
+            - If customer replies 0 or "no" or ignores: do nothing, booking stands as is.
+            - Max 2 paddles. If they request more, apply the AMBIGUITY RULE (cap at 2, confirm).
+            - Never mention brand names — refer to paddles by model name only as listed above.
         """
 
 def get_admin_prompt():
@@ -127,7 +146,7 @@ def get_admin_prompt():
         Always confirm before deleting or blocking.
         """
 
-customer_tools = [check_available_slots, create_booking, cancel_booking, get_my_bookings]
+customer_tools = [check_available_slots, create_booking, cancel_booking, get_my_bookings, add_paddle_rental]
 admin_tools = [
     check_available_slots, create_booking, cancel_booking,
     get_my_bookings, get_all_bookings, delete_booking_by_id,

@@ -11,12 +11,11 @@ load_dotenv()
 
 app = FastAPI()
 
-twilio_client = Client(
-    os.getenv("TWILIO_ACCOUNT_SID"),
-    os.getenv("TWILIO_AUTH_TOKEN")
-)
+twilio_client = Client(os.environ["TWILIO_ACCOUNT_SID"], os.environ["TWILIO_AUTH_TOKEN"])
+TWILIO_NUMBER = os.environ["TWILIO_WHATSAPP_NUMBER"]
 
 ADMIN_PHONE = os.getenv("ADMIN_PHONE", "").replace("+91", "").replace(" ", "")
+
 
 @app.post("/webhook")
 async def webhook(
@@ -29,10 +28,8 @@ async def webhook(
 
     history = get_session(sender)
 
-    # Normalize sender number for comparison
     clean_sender = sender.replace("whatsapp:", "").replace("+91", "").replace(" ", "")
 
-    # Route to admin or customer agent
     if clean_sender == ADMIN_PHONE:
         reply, updated_history = run_admin_agent(sender, user_message, history)
     else:
@@ -45,9 +42,30 @@ async def webhook(
     elif not isinstance(reply, str):
         reply = str(reply)
 
-    resp = MessagingResponse()
-    resp.message(reply)
-    return Response(content=str(resp), media_type="application/xml")
+    # Split on [SPLIT] to send two separate WhatsApp messages
+    parts = [p.strip() for p in reply.split("[SPLIT]") if p.strip()]
+
+    if len(parts) >= 2:
+        # Send the first message via TwiML (synchronous response)
+        resp = MessagingResponse()
+        resp.message(parts[0])
+
+        # Send all subsequent parts via Twilio REST API
+        for extra in parts[1:]:
+            twilio_client.messages.create(
+                from_=TWILIO_NUMBER,
+                to=sender,
+                body=extra
+            )
+
+        return Response(content=str(resp), media_type="application/xml")
+
+    else:
+        # Normal single message
+        resp = MessagingResponse()
+        resp.message(parts[0] if parts else reply)
+        return Response(content=str(resp), media_type="application/xml")
+
 
 @app.get("/health")
 def health():

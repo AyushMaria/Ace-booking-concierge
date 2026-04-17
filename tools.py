@@ -842,3 +842,18 @@ def edit_promo_code(
 
     except Exception as e:
         return f"Error editing promo code: {str(e)}"
+
+@tool
+def add_paddle_rental(booking_id: str, paddle_count: int) -> dict:
+    """
+    Add premium paddle rental to a confirmed booking.
+    Only valid for paddle_count of 1 or 2.
+    """
+    if paddle_count not in [0, 1, 2]:
+        return {"success": False, "error": "Invalid paddle count. Must be 0, 1, or 2."}
+
+    result = supabase.table("bookings").update({
+        "paddle_rental": paddle_count
+    }).eq("id", booking_id).execute()
+
+    return {"success": True}
