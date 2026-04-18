@@ -84,10 +84,17 @@ def get_system_prompt(phone: str = ""):
           "📌 Example: John Appleseed | john@gmail.com | UPI\n"
           "*Payment is collected after you play — no advance needed*"
         
-        - The customer's WhatsApp phone number is: {phone}. Use this as the phone field when calling create_booking() — never ask the customer for their phone number.
+          - The customer's WhatsApp phone number is: {phone}. Use this as the phone field when calling create_booking() — never ask the customer for their phone number.
         
-        - Wait for the customer's single reply. Parse it for: name, email
+          - Wait for the customer's single reply. Parse it for: name, email
           and payment_mode. Phone number is already known from the session context.
+
+          # Add inside get_system_prompt(), under Booking Rules:
+
+          - CRITICAL: After create_booking() returns a success message, NEVER call check_available_slots() again for the same slot.
+          A successful create_booking() is final — treat it as confirmed regardless of any subsequent availability check.
+          - When processing a payment clarification reply (e.g., "Ok", "UPI", "Cash"), call create_booking() DIRECTLY. Do not re-check availability first.
+
         
         - VALIDATION RULES after receiving the reply:
           - If payment is not Cash/UPI: ask only for payment mode, nothing else.
