@@ -19,7 +19,8 @@ TIME_SLOTS = {
     "evening":   ["5:00 PM - 5:30 PM","5:30 PM - 6:00 PM","6:00 PM - 6:30 PM",
                   "6:30 PM - 7:00 PM","7:00 PM - 7:30 PM","7:30 PM - 8:00 PM",
                   "8:00 PM - 8:30 PM","8:30 PM - 9:00 PM","9:00 PM - 9:30 PM",
-                  "9:30 PM - 10:00 PM","10:00 PM - 10:30 PM","10:30 PM - 11:00 PM"],
+                  "9:30 PM - 10:00 PM", "10:00 PM - 10:30 PM","10:30 PM - 11:00 PM",
+                  "11:00 PM - 11:30 PM", "11:30 PM - 12:00 AM",],
 }
 
 
@@ -59,6 +60,15 @@ def check_available_slots(booking_date: str, time_block: str) -> str:
 
         all_slots = TIME_SLOTS.get(time_block, [])
         available = [s for s in all_slots if s not in booked]
+
+        if booking_date == today:
+            def slot_start_passed(slot_str):
+                start_str = slot_str.split(" - ")[0]   # e.g. "10:30 PM"
+                slot_start = datetime.strptime(f"{booking_date} {start_str}", "%Y-%m-%d %I:%M %p")
+                slot_start = ist.localize(slot_start)
+                return slot_start <= now
+
+            available = [s for s in available if not slot_start_passed(s)]
 
         if not available:
             return f"No slots available for {time_block} on {booking_date}."
