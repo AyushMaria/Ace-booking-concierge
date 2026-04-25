@@ -880,10 +880,14 @@ def get_customer_by_phone(phone: str) -> dict:
 
 @tool
 def create_customer_profile(phone: str, name: str, email: str) -> dict:
-    """Save a new customer's profile to the customers table."""
-    result = supabase.table("customers").insert({
-        "phone": phone,
-        "name": name,
-        "email": email
-    }).execute()
-    return {"success": True}
+    """Save or update a customer's profile in the customers table."""
+    try:
+        supabase.table("customers").upsert({
+            "phone": phone,
+            "name": name,
+            "email": email
+        }, on_conflict="phone").execute()
+        return {"success": True}
+    except Exception as e:
+        print(f"[create_customer_profile error] {e}")
+        return {"success": False, "error": str(e)}

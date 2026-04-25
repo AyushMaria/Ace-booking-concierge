@@ -230,15 +230,22 @@ admin_tools = [
     edit_booking_total, get_revenue, edit_promo_code, get_customer_by_phone
 ]
 
+# AFTER
 def run_agent(phone: str, user_message: str, history: list) -> tuple[str, list]:
     """Run the customer agent."""
     agent = create_react_agent(model=llm, tools=customer_tools, prompt=get_system_prompt(phone))
     history.append({"role": "user", "content": user_message})
-    result = agent.invoke({"messages": history})
-    messages = result["messages"]
-    ai_messages = [m for m in messages if hasattr(m, 'type') and m.type == "ai"]
-    raw_reply = ai_messages[-1].content if ai_messages else "Sorry, I couldn't process that."
-    reply = _parse_reply(raw_reply)
+    
+    try:
+        result = agent.invoke({"messages": history})
+        messages = result["messages"]
+        ai_messages = [m for m in messages if hasattr(m, 'type') and m.type == "ai"]
+        raw_reply = ai_messages[-1].content if ai_messages else "Sorry, I couldn't process that."
+        reply = _parse_reply(raw_reply)
+    except Exception as e:
+        print(f"[run_agent error] {e}")
+        reply = "Sorry, I'm having a little trouble right now. Please try again in a moment! 🙏"
+    
     history.append({"role": "assistant", "content": reply})
     return reply, history
 
@@ -246,11 +253,17 @@ def run_admin_agent(phone: str, user_message: str, history: list) -> tuple[str, 
     """Run the admin agent."""
     agent = create_react_agent(model=llm, tools=admin_tools, prompt=get_admin_prompt())
     history.append({"role": "user", "content": user_message})
-    result = agent.invoke({"messages": history})
-    messages = result["messages"]
-    ai_messages = [m for m in messages if hasattr(m, 'type') and m.type == "ai"]
-    raw_reply = ai_messages[-1].content if ai_messages else "Sorry, I couldn't process that."
-    reply = _parse_reply(raw_reply)
+    
+    try:
+        result = agent.invoke({"messages": history})
+        messages = result["messages"]
+        ai_messages = [m for m in messages if hasattr(m, 'type') and m.type == "ai"]
+        raw_reply = ai_messages[-1].content if ai_messages else "Sorry, I couldn't process that."
+        reply = _parse_reply(raw_reply)
+    except Exception as e:
+        print(f"[run_agent error] {e}")
+        reply = "Sorry, I'm having a little trouble right now. Please try again in a moment! 🙏"
+    
     history.append({"role": "assistant", "content": reply})
     return reply, history
 
