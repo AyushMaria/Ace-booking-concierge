@@ -1,7 +1,7 @@
 from supabase import create_client
 from langchain_core.tools import tool
 from datetime import date, datetime, timedelta
-import os, httpx, json
+import os, httpx, json, re
 from dotenv import load_dotenv
 from typing import List
 import pytz
@@ -10,6 +10,24 @@ load_dotenv()
 
 
 supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_ANON_KEY"))
+
+def normalize_phone(phone: str) -> str:
+    digits = re.sub(r"\D", "", phone or "")
+    if digits.startswith("91") and len(digits) >= 12:
+        digits = digits[-10:]
+    elif len(digits) >= 10:
+        digits = digits[-10:]
+    return f"+91{digits}" if digits else (phone or "").strip()
+
+def phone_variants(phone: str) -> List[str]:
+    normalized = normalize_phone(phone)
+    digits = re.sub(r"\D", "", normalized)
+    last10 = digits[-10:] if len(digits) >= 10 else digits
+    variants = [normalized]
+    if last10:
+        variants.append(last10)
+        variants.append(f"91{last10}")
+    return list(dict.fromkeys([v for v in variants if v]))
 
 TIME_SLOTS = {
     "morning":   ["7:00 AM - 7:30 AM","7:30 AM - 8:00 AM","8:00 AM - 8:30 AM",
@@ -387,34 +405,25 @@ def get_booking_stats() -> str:
         return f"Error fetching stats: {str(e)}"
 
 @tool
-def get_bookings_by_phone(phones: List[str]) -> str:
-    """
-    Admin: Get all bookings for one or more phone numbers.
-    phones: list of phone numbers e.g. ["9876543210", "9123456789"]
-    """
-    try:
-        clean_phones = [p.replace("+91", "").replace(" ", "").strip() for p in phones]
+def get_customer_by_phone(phone: str) -> dict:
+    """Look up a customer's saved profile using their phone number.
+    Returns name and email if found, or indicates they are a new customer."""
+    variants = phone_variants(phone)
+    result = supabase.table("customers") \
+        .select("name, email, phone") \
+        .in_("phone", variants) \
+        .execute()
 
-        result = supabase.table("bookings") \
-            .select("*") \
-            .in_("phone", clean_phones) \
-            .order("booking_date", desc=True) \
-            .execute()
+    if result.data:
+        customer = next((r for r in result.data if (r.get("email") or "").strip()), result.data[0])
+        return {
+            "found": True,
+            "name": customer["name"],
+            "email": customer["email"],
+            "phone": customer["phone"]
+        }
 
-        if not result.data:
-            return f"No bookings found for: {', '.join(clean_phones)}"
-
-        lines = []
-        for b in result.data:
-            slots = b["slots"] if isinstance(b["slots"], list) else __import__('json').loads(b["slots"])
-            lines.append(
-                f"🆔 ID: {b['id']} | 👤 {b['name']} | 📞 {b['phone']} | "
-                f"📅 {b['booking_date']} | ⏰ {', '.join(slots)} | 💰 ₹{b['total_price']}"
-            )
-        return f"Bookings found:\n" + "\n".join(lines)
-
-    except Exception as e:
-        return f"Error fetching bookings: {str(e)}"
+    return {"found": False}
     
 
 
@@ -891,7 +900,6 @@ def create_customer_profile(phone: str, name: str, email: str) -> dict:
     except Exception as e:
         print(f"[create_customer_profile error] {e}")
         return {"success": False, "error": str(e)}
-
 
 @tool
 def sync_website_customers(dry_run: bool = False) -> str:
