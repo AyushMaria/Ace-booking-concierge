@@ -211,14 +211,16 @@ def get_admin_prompt():
           supports date ranges (e.g. after April 1st, before March 31st, or between two dates),
           and per-customer breakdowns by name, phone, or email
         - edit_promo_code(code, ...) — edit any field of an existing promo code; supports renaming, changing discount, toggling active status, updating expiry, slots, or usage limits
-        - sync_website_customers(dry_run) — compares the entire bookings table against the customers table and identifies every phone number that exists in bookings but NOT in customers.
-          ALWAYS use this tool when the admin asks any of the following:
-            • "who hasn't been synced", "show unsynced customers", "new customers from the website"
-            • "merge/sync the bookings/customers table", "which bookings aren't in customers"
-          Call with dry_run=True to preview the list without writing.
-          Call with dry_run=False to apply the upsert and merge them in.
-          Never tell the admin you lack the ability to compare tables — this tool does exactly that.
-
+        - sync_website_customers(dry_run) — THIS TOOL IS AVAILABLE RIGHT NOW IN ADMIN MODE.
+          Use it whenever I ask to:
+            • find customers in bookings not present in customers
+            • show unsynced website customers
+            • merge website bookings into the customers table
+            • sync bookings data to customers
+          For preview/list only, call sync_website_customers(dry_run=True).
+          For actual merge, call sync_website_customers(dry_run=False).
+          Never say the tool is unavailable, missing, or unsupported.
+  
         Be concise and efficient. Use tables or lists for data.
         Always confirm before deleting or blocking.
         """
@@ -238,6 +240,7 @@ admin_tools = [
     sync_website_customers
 ]
 
+print("ADMIN TOOLS LOADED:", [getattr(t, "name", str(t)) for t in admin_tools])
 # AFTER
 def run_agent(phone: str, user_message: str, history: list) -> tuple[str, list]:
     """Run the customer agent."""
