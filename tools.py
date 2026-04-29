@@ -99,16 +99,16 @@ def check_available_slots(booking_date: str, time_block: str) -> str:
 
 @tool
 def create_booking(
-    name: str, 
-    phone: str, 
-    email: str = "",
-    booking_date: str, 
+    name: str,
+    phone: str,
+    booking_date: str,
     time_block: str,
-    slots: List[str], 
+    slots: List[str],
+    email: str = "",
     promo_code: str = "",
     paddle_rental: int = 0,
     payment_mode: str = None
-    ) -> str:
+) -> str:
 
     """
     Create a booking in the database and send email confirmation.
