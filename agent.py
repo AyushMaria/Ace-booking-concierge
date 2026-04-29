@@ -211,7 +211,13 @@ def get_admin_prompt():
           supports date ranges (e.g. after April 1st, before March 31st, or between two dates),
           and per-customer breakdowns by name, phone, or email
         - edit_promo_code(code, ...) — edit any field of an existing promo code; supports renaming, changing discount, toggling active status, updating expiry, slots, or usage limits
-        - sync_website_customers(dry_run) — merge bookings-table customers missing from the customers table; dry_run=True previews without writing, dry_run=False applies the sync
+        - sync_website_customers(dry_run) — compares the entire bookings table against the customers table and identifies every phone number that exists in bookings but NOT in customers.
+          ALWAYS use this tool when the admin asks any of the following:
+            • "who hasn't been synced", "show unsynced customers", "new customers from the website"
+            • "merge/sync the bookings/customers table", "which bookings aren't in customers"
+          Call with dry_run=True to preview the list without writing.
+          Call with dry_run=False to apply the upsert and merge them in.
+          Never tell the admin you lack the ability to compare tables — this tool does exactly that.
 
         Be concise and efficient. Use tables or lists for data.
         Always confirm before deleting or blocking.
