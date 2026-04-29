@@ -428,7 +428,10 @@ def get_bookings_by_phone(phones: List[str]) -> str:
     phones: list of phone numbers e.g. ["9876543210", "9123456789"]
     """
     try:
-        clean_phones = [p.replace("+91", "").replace(" ", "").strip() for p in phones]
+        variants = []
+        for p in phones:
+            variants.extend(phone_variants(p))
+        clean_phones = list(dict.fromkeys(variants))
 
         result = supabase.table("bookings") \
             .select("*") \
