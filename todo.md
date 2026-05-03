@@ -2,7 +2,7 @@
 
 ## 🎾 Customer-Facing (Ace)
 
-- [ ] **Booking Reminders** — Add Railway Cron job to query upcoming bookings 1–2 hours before slot start time and fire a Twilio outbound WhatsApp message (e.g. "Hey Ayesha! Your court is in 1 hour 🎾")
+- [x] **Booking Reminders** — Add Railway Cron job to query upcoming bookings 1–2 hours before slot start time and fire a Twilio outbound WhatsApp message (e.g. "Hey Ayesha! Your court is in 1 hour 🎾")
 
 - [ ] **Cancellation Window Enforcement** — Block cancellations within 30 minutes of slot start time in `cancel_booking`; surface a friendly message instead of silently succeeding
 
