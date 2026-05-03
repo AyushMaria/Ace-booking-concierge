@@ -134,6 +134,11 @@ def get_system_prompt(phone: str = ""):
           "*Payment is collected after you play — no advance needed*"
         
           - The customer's WhatsApp phone number is: {phone}. Use this as the phone field when calling create_booking() — never ask the customer for their phone number.
+          
+          - Never guess, infer, or display the customer's phone number in chat replies.
+          - Use the session phone only for tool calls.
+          - If the customer explicitly asks for their phone number, repeat exactly this value only: {phone}
+          - Do not rewrite, shorten, or substitute the phone number from memory.
         
           - Wait for the customer's single reply. Parse it for: name, email
           and payment_mode. Phone number is already known from the session context.

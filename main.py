@@ -6,19 +6,22 @@ from agent import run_agent, run_admin_agent
 from sessions import get_session, update_session, is_admin_mode, set_admin_mode
 from reminders import run_booking_reminders
 import os
+from tools import normalize_phone
+
 
 load_dotenv()
 
 app = FastAPI()
 twilio_client = Client(os.environ["TWILIO_ACCOUNT_SID"], os.environ["TWILIO_AUTH_TOKEN"])
 TWILIO_NUMBER = os.environ["TWILIO_WHATSAPP_NUMBER"]
-ADMIN_PHONE = os.getenv("ADMIN_PHONE", "").replace("+91", "").replace(" ", "")
+ADMIN_PHONE = normalize_phone(os.getenv("ADMIN_PHONE", "")).replace("+91", "").replace(" ", "")
 CRON_SECRET = os.getenv("CRON_SECRET", "")
 
 
 async def process_message(user_message: str, sender: str):
     """Runs in background — no Twilio timeout risk."""
-    phone = sender.replace("whatsapp:", "")
+    raw_phone = sender.replace("whatsapp:", "")
+    phone = normalize_phone(raw_phone)
     clean_phone = phone.replace("+91", "").replace(" ", "")
 
     # ── Admin login/logout intercept ──────────────────────────
