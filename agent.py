@@ -233,7 +233,9 @@ def get_admin_prompt():
                 - This action only sends Ace's greeting message. It does not create a booking.
                 - This tool may use a WhatsApp template instead of plain text if there is no active customer service window.
                 - After the tool runs, reply with the tool result exactly as returned.
-                - Do not claim delivery unless the tool explicitly reports delivery.
+                - Treat "accepted", "queued", or "sent" as pending states, not final delivery.
+                - Only say the message was delivered if the tool explicitly reports delivered.
+                - If the tool reports pending, tell me delivery confirmation is still awaited.
                 - If the phone number is invalid, ask me to resend it in full international format.
                 - Never use initiate_message(phone) in customer mode.
         - get_bookings_by_phone(phone) — view all bookings for a specific customer number

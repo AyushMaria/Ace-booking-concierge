@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Form, BackgroundTasks, Header, HTTPException
+from fastapi import FastAPI, Form, BackgroundTasks, Header, HTTPException, Request
 from fastapi.responses import Response
 from twilio.rest import Client
 from dotenv import load_dotenv
@@ -7,9 +7,11 @@ from sessions import get_session, update_session, is_admin_mode, set_admin_mode
 from reminders import run_booking_reminders
 import os
 from tools import normalize_phone
+from supabase import create_client
 
 
 load_dotenv()
+supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_ANON_KEY"))
 
 app = FastAPI()
 twilio_client = Client(os.environ["TWILIO_ACCOUNT_SID"], os.environ["TWILIO_AUTH_TOKEN"])
@@ -88,6 +90,28 @@ def send_booking_reminders(x_cron_secret: str = Header(default="")):
         **result
     }
 
+@app.post("/twilio/status-callback")
+async def twilio_status_callback(request: Request):
+    form = await request.form()
+
+    message_sid = form.get("MessageSid")
+    message_status = form.get("MessageStatus")
+    error_code = form.get("ErrorCode")
+    error_message = form.get("ChannelStatusMessage")
+
+    print(
+        f"[TWILIO_STATUS] sid={message_sid} "
+        f"status={message_status} error_code={error_code} "
+        f"error_message={error_message}"
+    )
+
+    supabase.table("outbound_messages").update({
+        "final_status": message_status,
+        "error_code": error_code,
+        "error_message": error_message
+    }).eq("twilio_sid", message_sid).execute()
+
+    return {"ok": True}
 
 @app.get("/health")
 def health():
