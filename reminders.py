@@ -5,6 +5,7 @@ import pytz
 from twilio.rest import Client
 from supabase import create_client
 from dotenv import load_dotenv
+from tools import normalize_phone
 
 load_dotenv()
 
@@ -90,7 +91,8 @@ def run_booking_reminders(window_start_mins: int = 60, window_end_mins: int = 12
                 f"See you at Vibe & Volley!"
             )
 
-            send_whatsapp_reminder(booking["phone"], reminder_text)
+            normalized_phone = normalize_phone(booking["phone"])
+            send_whatsapp_reminder(normalized_phone, reminder_text)
 
             supabase.table("bookings") \
                 .update({"reminder_sent_at": now.isoformat()}) \
