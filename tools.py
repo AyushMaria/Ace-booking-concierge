@@ -18,6 +18,7 @@ twilio_client = Client(
 
 TWILIO_NUMBER = os.getenv("TWILIO_WHATSAPP_NUMBER")
 WHATSAPP_INIT_TEMPLATE_SID = os.getenv("WHATSAPP_INIT_TEMPLATE_SID")
+TWILIO_STATUS_CALLBACK_URL = os.getenv("TWILIO_STATUS_CALLBACK_URL")
 
 ACE_GREETING_MESSAGE = (
     "Heyy there! 👋 Ace at your service. "
@@ -90,19 +91,24 @@ def initiate_message(phone: str) -> str:
             content_sid=WHATSAPP_INIT_TEMPLATE_SID,
             content_variables=json.dumps({
                 "1": "there"
-            })
+            }),
+            status_callback=TWILIO_STATUS_CALLBACK_URL
         )
 
-        print(
-            f"[INITIATE_MESSAGE] to={canonical_phone} "
-            f"sid={message.sid} status={message.status} "
-            f"error_code={message.error_code}"
-        )
+        supabase.table("outbound_messages").insert({
+            "to_phone": canonical_phone,
+            "message_type": "initiate_message",
+            "twilio_sid": message.sid,
+            "initial_status": message.status,
+            "final_status": None,
+            "error_code": message.error_code,
+            "error_message": message.error_message
+        }).execute()
 
         return (
-            f"✅ Initiation request accepted for {canonical_phone}. "
-            f"Twilio SID: {message.sid}. Initial status: {message.status}. "
-            f"Delivery is pending confirmation."
+            f"⏳ Initiation accepted for {canonical_phone}. "
+            f"Twilio SID: {message.sid}. Current status: {message.status}. "
+            f"Delivery is still pending."
         )
 
     except Exception as e:
@@ -116,6 +122,7 @@ def initiate_message(phone: str) -> str:
             )
 
         return f"❌ Failed to send initiation message: {error_text}"
+
 @tool
 def check_available_slots(booking_date: str, time_block: str) -> str:
     """
