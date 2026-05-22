@@ -733,7 +733,10 @@ def edit_booking(
         return f"Error editing booking: {str(e)}"
 
 
-def send_email_confirmation(... ) -> bool:
+def send_email_confirmation(
+    to_email, name, date, slot, duration, total_price,
+    phone="", promo_code="", paddle_rental=0, paddle_cost=0
+) -> bool:
     required_vars = ["EMAILJS_SERVICE_ID", "EMAILJS_TEMPLATE_ID", "EMAILJS_PUBLIC_KEY", "EMAILJS_PRIVATE_KEY"]
     missing = [v for v in required_vars if not os.getenv(v)]
     if missing:
