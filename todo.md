@@ -42,10 +42,10 @@
 
 - [x] **Twilio Signature Validation** — Add `twilio.request_validator.RequestValidator` middleware to `main.py`; prevents webhook spoofing by verifying every incoming POST is genuinely from Twilio
 
-- [:hourglass_flowing_sand:] **Rate Limiting** — Move the cooldown store to Redis so all instances share the same rate-limit state.
+- [ ] **Rate Limiting** — Move the cooldown store to Redis so all instances share the same rate-limit state.
 
 - [x] **Phone Normalization at Entry Point** — Call `normalize_phone()` once at the top of the webhook handler in `main.py` on the `From:` field before it reaches the agent; remove scattered per-tool normalization
 
 - [ ] **Structured Logging** — Replace all `print()` calls across `main.py`, `agent.py`, `tools.py`, and `sessions.py` with Python `logging` module at `INFO`/`ERROR` levels for Railway log filtering
 
-- [ ] **Expand Tool Docstrings** — Rewrite short/generic docstrings on `sync_website_customers`, `edit_booking_total`, `add_paddle_rental`, and other ambiguous tools with concrete when-to-call and when-NOT-to-call examples to reduce LLM hallucinated tool calls
+- [x] **Expand Tool Docstrings** — Rewrite short/generic docstrings on `sync_website_customers`, `edit_booking_total`, `add_paddle_rental`, and other ambiguous tools with concrete when-to-call and when-NOT-to-call examples to reduce LLM hallucinated tool calls

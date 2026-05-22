@@ -787,12 +787,38 @@ def edit_booking_total(
     name: str = None
     ) -> str:
     """
-    Admin: Override the total price for bookings by ID, phone number, or customer name.
-    At least one filter (booking_ids, phone, or name) must be provided.
-    new_total: the new total price to set (in ₹)
-    booking_ids: list of specific booking IDs to update (optional)
-    phone: update all bookings for this phone number (optional)
-    name: update all bookings matching this name (optional)
+    Admin-only override tool: manually set total_price on one or more EXISTING bookings.
+
+    Use this tool only when the admin explicitly wants to OVERRIDE the final amount
+    charged for existing bookings, such as:
+    - applying a manual goodwill discount
+    - correcting a mistaken total
+    - setting a custom total outside normal pricing rules
+
+    Required:
+    - new_total must be the final rupee amount to save
+    - at least one filter must be provided: booking_ids, phone, or name
+
+    Matching behavior:
+    - booking_ids updates specific bookings by ID
+    - phone updates all bookings matching that phone
+    - name updates all bookings matching that customer name
+
+    Do NOT use this tool when:
+    - creating a new booking
+    - recalculating price after slot/date changes; use edit_booking or create_booking
+    - applying a promo code through the normal promo flow
+    - the user is only asking what the total would be
+
+    Ask for confirmation before using this tool if multiple bookings may be affected.
+
+    Examples of correct use:
+    - "Set booking 145 total to ₹700"
+    - "Make all bookings for +9198xxxxxx have total ₹500"
+
+    Examples of incorrect use:
+    - "Apply promo code VIBESLOT" -> do not use this tool
+    - "Change booking 145 from 1 hour to 90 minutes" -> use edit_booking
     """
     try:
         if not any([booking_ids, phone, name]):
@@ -998,8 +1024,30 @@ def edit_promo_code(
 @tool
 def add_paddle_rental(booking_id: str, paddle_count: int) -> dict:
     """
-    Add premium paddle rental to a confirmed booking.
-    Only valid for paddle_count of 1 or 2.
+    Admin/customer support tool: update paddle rental count on an EXISTING confirmed booking.
+
+    Use this tool only when:
+    - the booking already exists in the bookings table, and
+    - you know the specific booking_id, and
+    - the user wants to add, remove, or change paddle rental for that booking.
+
+    Valid values:
+    - 0 = remove paddle rental
+    - 1 = add one paddle rental
+    - 2 = add two paddle rentals
+
+    Do NOT use this tool when:
+    - creating a brand new booking; include paddle rental in create_booking instead
+    - the user is only asking about paddle rental pricing or availability
+    - you do not yet know the booking_id
+    - the user wants to edit date, slot, phone, or name; use edit_booking for that
+
+    Examples of correct use:
+    - "Add 2 paddles to booking ID 145"
+    - "Remove paddle rental from booking 203"
+
+    Example of incorrect use:
+    - "Book a court tomorrow with 2 paddles" -> use create_booking, not this tool.
     """
     if paddle_count not in [0, 1, 2]:
         return {"success": False, "error": "Invalid paddle count. Must be 0, 1, or 2."}
@@ -1052,10 +1100,38 @@ def create_customer_profile(phone: str, name: str, email: str) -> dict:
 @tool
 def sync_website_customers(dry_run: bool = False) -> str:
     """
-    Admin: Sync customers from the bookings table into the customers table.
-    Finds all bookings whose phone number is not yet in the customers table,
-    then upserts them (name, phone, email).
-    dry_run=True will preview the records without writing anything.
+    Admin-only maintenance tool: find booking customers missing from the customers table
+    and optionally sync them into customers.
+
+    Use this tool when the admin asks to:
+    - find unsynced customers
+    - preview which booking customers are missing from customers
+    - merge booking customer records into the customers table
+    - sync website/bookings customer data
+
+    Behavior:
+    - dry_run=True: preview only, no database writes
+    - dry_run=False: perform the actual upsert into the customers table
+
+    Always use dry_run=True first when:
+    - the admin asks to "check", "preview", "show", "find", or "list" missing customers
+    - you are not sure whether they want a preview or an actual write
+
+    Use dry_run=False only when:
+    - the admin clearly asks to proceed with the sync/merge/write operation
+
+    Do NOT use this tool when:
+    - looking up one customer by phone; use get_customer_by_phone
+    - creating or editing a single customer manually
+    - handling normal booking creation/cancellation flows
+    - the user is not in admin mode
+
+    Example correct uses:
+    - "Show unsynced website customers" -> dry_run=True
+    - "Sync all missing website customers now" -> dry_run=False
+
+    Example incorrect use:
+    - "Find customer +9198xxxxxx" -> use get_customer_by_phone, not this tool.
     """
     try:
         # Fetch all non-blocked bookings with name/phone/email
