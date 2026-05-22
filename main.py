@@ -1,6 +1,7 @@
 from fastapi import FastAPI, Form, BackgroundTasks, Header, HTTPException, Request
 from fastapi.responses import Response
 from twilio.rest import Client
+from twilio.request_validator import RequestValidator
 from dotenv import load_dotenv
 from agent import run_agent, run_admin_agent
 from sessions import get_session, update_session, is_admin_mode, set_admin_mode
@@ -16,6 +17,7 @@ supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_ANON_KEY
 app = FastAPI()
 twilio_client = Client(os.environ["TWILIO_ACCOUNT_SID"], os.environ["TWILIO_AUTH_TOKEN"])
 TWILIO_NUMBER = os.environ["TWILIO_WHATSAPP_NUMBER"]
+twilio_validator = RequestValidator(os.environ["TWILIO_AUTH_TOKEN"])
 ADMIN_PHONE = normalize_phone(os.getenv("ADMIN_PHONE", "")).replace("+91", "").replace(" ", "")
 CRON_SECRET = os.getenv("CRON_SECRET", "")
 
@@ -65,14 +67,24 @@ async def process_message(user_message: str, sender: str):
 
 @app.post("/webhook")
 async def webhook(
+    request: Request,
     background_tasks: BackgroundTasks,
     Body: str = Form(...),
-    From: str = Form(...)
+    From: str = Form(...),
+    x_twilio_signature: str = Header(default="", alias="X-Twilio-Signature")
 ):
     """Responds to Twilio instantly, processes in background."""
+    form_data = await request.form()
+    form_dict = dict(form_data)
+
+    request_url = str(request.url)
+    is_valid = twilio_validator.validate(request_url, form_dict, x_twilio_signature)
+
+    if not is_valid:
+        raise HTTPException(status_code=403, detail="Invalid Twilio signature")
+
     background_tasks.add_task(process_message, Body.strip(), From)
     return Response(content="", media_type="application/xml")
-
 
 @app.post("/cron/send-booking-reminders")
 def send_booking_reminders(x_cron_secret: str = Header(default="")):
@@ -86,8 +98,15 @@ def send_booking_reminders(x_cron_secret: str = Header(default="")):
     }
 
 @app.post("/twilio/status-callback")
-async def twilio_status_callback(request: Request):
+async def twilio_status_callback(request: Request, x_twilio_signature: str = Header(default="", alias="X-Twilio-Signature")):
     form = await request.form()
+    form_dict = dict(form)
+
+    request_url = str(request.url)
+    is_valid = twilio_validator.validate(request_url, form_dict, x_twilio_signature)
+
+    if not is_valid:
+        raise HTTPException(status_code=403, detail="Invalid Twilio signature")
 
     message_sid = form.get("MessageSid")
     message_status = form.get("MessageStatus")
