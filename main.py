@@ -6,12 +6,14 @@ from dotenv import load_dotenv
 from agent import run_agent, run_admin_agent
 from sessions import get_session, update_session, is_admin_mode, set_admin_mode
 from reminders import run_booking_reminders
+from logging_config import get_logger
 import os
 import time
 from threading import Lock
 from tools import normalize_phone
 from supabase import create_client
 
+logger = get_logger(__name__)
 
 load_dotenv()
 supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_ANON_KEY"))
@@ -80,7 +82,7 @@ async def process_message(user_message: str, sender: str, phone: str):
                 body=part
             )
         except Exception as e:
-            print(f"[ERROR] Failed to send message: {e}")
+            logger.exception("Failed to send outbound WhatsApp message", extra={"to": sender})
 
 @app.post("/webhook")
 async def webhook(
@@ -142,10 +144,14 @@ async def twilio_status_callback(
     error_code = form.get("ErrorCode")
     error_message = form.get("ChannelStatusMessage")
 
-    print(
-        f"[TWILIO_STATUS] sid={message_sid} "
-        f"status={message_status} error_code={error_code} "
-        f"error_message={error_message}"
+    logger.info(
+        "Twilio status callback received",
+        extra={
+            "message_sid": message_sid,
+            "message_status": message_status,
+            "error_code": error_code,
+            "error_message": error_message,
+        },
     )
 
     supabase.table("outbound_messages").update({

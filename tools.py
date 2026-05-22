@@ -6,6 +6,9 @@ import os, httpx, json, re
 from dotenv import load_dotenv
 from typing import List
 import pytz
+from logging_config import get_logger
+
+logger = get_logger(__name__)
 
 load_dotenv()
 
@@ -741,7 +744,10 @@ def send_email_confirmation(
     required_vars = ["EMAILJS_SERVICE_ID", "EMAILJS_TEMPLATE_ID", "EMAILJS_PUBLIC_KEY", "EMAILJS_PRIVATE_KEY"]
     missing = [v for v in required_vars if not os.getenv(v)]
     if missing:
-        print(f"[send_email_confirmation] Missing env vars: {', '.join(missing)}")
+        logger.error(
+            "Missing EmailJS environment variables",
+            extra={"missing_vars": missing}
+        )
         return False
 
     paddle_line = f"{paddle_rental} paddle(s) — ₹{paddle_cost}" if paddle_rental else "None"
@@ -770,14 +776,18 @@ def send_email_confirmation(
             timeout=10
         )
         if response.status_code == 200:
-            print(f"[EmailJS] ✅ Sent to {to_email}")
+            logger.info("EmailJS confirmation sent", extra={"to_email": to_email})
             return True
         else:
-            print(f"[EmailJS] ❌ Failed — status {response.status_code}: {response.text}")
+            logger.error(
+                "EmailJS confirmation failed",
+                extra={
+                    "to_email": to_email,
+                    "status_code": response.status_code,
+                    "response_text": response.text,
+                },
+            )
             return False
-    except Exception as e:
-        print(f"[EmailJS] ❌ Exception: {e}")
-        return False
 
 @tool
 def edit_booking_total(
@@ -1094,7 +1104,10 @@ def create_customer_profile(phone: str, name: str, email: str) -> dict:
         }, on_conflict="phone").execute()
     
     except Exception as e:
-        print(f"[create_customer_profile error] {e}")
+        logger.exception(
+            "Failed to create or update customer profile",
+            extra={"phone": phone, "name": name, "email": email}
+        )
         return {"success": False, "error": str(e)}
 
 @tool

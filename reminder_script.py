@@ -1,6 +1,9 @@
 import httpx
 import os
 from dotenv import load_dotenv
+from logging_config import get_logger
+
+logger = get_logger(__name__)
 
 load_dotenv()
 
@@ -13,4 +16,4 @@ response = httpx.post(
     timeout=30
 )
 
-print(f"Reminder job result: {response.json()}")
+logger.info("Reminder job completed", extra={"response": response.json()})

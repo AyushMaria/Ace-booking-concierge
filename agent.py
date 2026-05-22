@@ -11,6 +11,9 @@ from tools import (
 import os
 from datetime import datetime
 import pytz
+from logging_config import get_logger
+
+logger = get_logger(__name__)
 
 llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0)
 
@@ -249,7 +252,10 @@ def get_admin_prompt():
         """
 
 
-print("ADMIN TOOLS LOADED:", [getattr(t, "name", str(t)) for t in admin_tools])
+logger.info(
+    "Admin tools loaded",
+    extra={"tools": [getattr(t, "name", str(t)) for t in admin_tools]}
+)
 
 # NEW: Cache agents at module level so they are built exactly once on import.
 # The prompts are now static, so the graph structure never changes.
@@ -284,7 +290,7 @@ def run_agent(phone: str, user_message: str, history: list) -> tuple[str, list]:
         raw_reply = ai_messages[-1].content if ai_messages else "Sorry..."
         reply = _parse_reply(raw_reply)
     except Exception as e:
-        print(f"[run_agent error] {e}")
+        logger.exception("Customer agent failed", extra={"phone": phone})
         reply = "Sorry, I'm having a little trouble right now..."
 
     history.append({"role": "user", "content": user_message})
@@ -307,7 +313,7 @@ def run_admin_agent(phone: str, user_message: str, history: list) -> tuple[str, 
         raw_reply = ai_messages[-1].content if ai_messages else "Sorry..."
         reply = _parse_reply(raw_reply)
     except Exception as e:
-        print(f"[run_agent error] {e}")
+        logger.exception("Admin agent failed", extra={"phone": phone})
         reply = "Sorry, I'm having a little trouble right now..."
 
     history.append({"role": "user", "content": user_message})
