@@ -42,34 +42,32 @@ def allow_request(phone: str) -> bool:
         return True
 
 
-async def process_message(user_message: str, sender: str):
+async def process_message(user_message: str, sender: str, phone: str):
     """Runs in background — no Twilio timeout risk."""
-    raw_phone = sender.replace("whatsapp:", "")
-    phone = normalize_phone(raw_phone)
     clean_phone = phone.replace("+91", "").replace(" ", "")
 
     # ── Admin login/logout intercept ──────────────────────────
     if user_message.strip().lower() in ["admin login", "login admin"]:
         if clean_phone == ADMIN_PHONE:
-            set_admin_mode(sender, True)
+            set_admin_mode(phone, True)
             reply = "🔐 Admin mode activated. Welcome back, boss!"
         else:
             reply = "⛔ Unauthorized. This number is not registered as an admin."
 
     elif user_message.strip().lower() in ["admin logout", "logout admin", "logout"]:
-        set_admin_mode(sender, False)
+        set_admin_mode(phone, False)
         reply = "✅ Logged out of admin mode. You're now in customer mode."
 
     # ── Route based on current session mode ───────────────────
     else:
-        history = get_session(sender)
+        history = get_session(phone)
 
-        if is_admin_mode(sender):
+        if is_admin_mode(phone):
             reply, updated_history = run_admin_agent(phone, user_message, history)
         else:
             reply, updated_history = run_agent(phone, user_message, history)
 
-        update_session(sender, updated_history)
+        update_session(phone, updated_history)
 
     # ── Send messages (split-aware) ───────────────────────────
     parts = [p.strip() for p in reply.split("[SPLIT]") if p.strip()]
@@ -83,7 +81,6 @@ async def process_message(user_message: str, sender: str):
             )
         except Exception as e:
             print(f"[ERROR] Failed to send message: {e}")
-
 
 @app.post("/webhook")
 async def webhook(
@@ -104,12 +101,13 @@ async def webhook(
         raise HTTPException(status_code=403, detail="Invalid Twilio signature")
 
     sender = From.strip()
-    rate_limit_key = normalize_phone(sender.replace("whatsapp:", ""))
+    raw_phone = sender.replace("whatsapp:", "").strip()
+    phone = normalize_phone(raw_phone)
 
-    if not allow_request(rate_limit_key):
+    if not allow_request(phone):
         return Response(content="", media_type="application/xml")
 
-    background_tasks.add_task(process_message, Body.strip(), sender)
+    background_tasks.add_task(process_message, Body.strip(), sender, phone)
     return Response(content="", media_type="application/xml")
 
 

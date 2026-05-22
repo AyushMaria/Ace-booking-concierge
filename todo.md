@@ -36,15 +36,15 @@
 
 ## ⚙️ Infrastructure & Code
 
-- [ ] **Persistent Sessions** — Replace in-memory dict in `sessions.py` with a `sessions` Supabase table (keyed by `phone`, storing JSON history array); fall back to empty history on missing row. Survives Railway restarts
+- [x] **Persistent Sessions** — Replace in-memory dict in `sessions.py` with a `sessions` Supabase table (keyed by `phone`, storing JSON history array); fall back to empty history on missing row. Survives Railway restarts
 
-- [ ] **Cache Agent at Module Level** — Move `create_react_agent(...)` out of `run_agent` / `run_admin_agent` in `agent.py`; cache at module level and inject time context as a user message instead of rebuilding the graph on every message
+- [x] **Cache Agent at Module Level** — Move `create_react_agent(...)` out of `run_agent` / `run_admin_agent` in `agent.py`; cache at module level and inject time context as a user message instead of rebuilding the graph on every message
 
-- [ ] **Twilio Signature Validation** — Add `twilio.request_validator.RequestValidator` middleware to `main.py`; prevents webhook spoofing by verifying every incoming POST is genuinely from Twilio
+- [x] **Twilio Signature Validation** — Add `twilio.request_validator.RequestValidator` middleware to `main.py`; prevents webhook spoofing by verifying every incoming POST is genuinely from Twilio
 
-- [ ] **Rate Limiting** — Add per-phone cooldown (e.g. 1 request per 2 seconds) in `main.py` using an in-memory dict or Redis counter to prevent Gemini API flooding
+- [:hourglass_flowing_sand:] **Rate Limiting** — Move the cooldown store to Redis so all instances share the same rate-limit state.
 
-- [ ] **Phone Normalization at Entry Point** — Call `normalize_phone()` once at the top of the webhook handler in `main.py` on the `From:` field before it reaches the agent; remove scattered per-tool normalization
+- [x] **Phone Normalization at Entry Point** — Call `normalize_phone()` once at the top of the webhook handler in `main.py` on the `From:` field before it reaches the agent; remove scattered per-tool normalization
 
 - [ ] **Structured Logging** — Replace all `print()` calls across `main.py`, `agent.py`, `tools.py`, and `sessions.py` with Python `logging` module at `INFO`/`ERROR` levels for Railway log filtering
 
