@@ -7,6 +7,8 @@ from agent import run_agent, run_admin_agent
 from sessions import get_session, update_session, is_admin_mode, set_admin_mode
 from reminders import run_booking_reminders
 import os
+import time
+from threading import Lock
 from tools import normalize_phone
 from supabase import create_client
 
@@ -20,6 +22,24 @@ TWILIO_NUMBER = os.environ["TWILIO_WHATSAPP_NUMBER"]
 twilio_validator = RequestValidator(os.environ["TWILIO_AUTH_TOKEN"])
 ADMIN_PHONE = normalize_phone(os.getenv("ADMIN_PHONE", "")).replace("+91", "").replace(" ", "")
 CRON_SECRET = os.getenv("CRON_SECRET", "")
+
+RATE_LIMIT_SECONDS = 2
+last_request_by_phone = {}
+rate_limit_lock = Lock()
+
+
+def allow_request(phone: str) -> bool:
+    """Allow only 1 request per phone every RATE_LIMIT_SECONDS."""
+    now = time.time()
+
+    with rate_limit_lock:
+        last_seen = last_request_by_phone.get(phone)
+
+        if last_seen is not None and (now - last_seen) < RATE_LIMIT_SECONDS:
+            return False
+
+        last_request_by_phone[phone] = now
+        return True
 
 
 async def process_message(user_message: str, sender: str):
@@ -83,8 +103,15 @@ async def webhook(
     if not is_valid:
         raise HTTPException(status_code=403, detail="Invalid Twilio signature")
 
-    background_tasks.add_task(process_message, Body.strip(), From)
+    sender = From.strip()
+    rate_limit_key = normalize_phone(sender.replace("whatsapp:", ""))
+
+    if not allow_request(rate_limit_key):
+        return Response(content="", media_type="application/xml")
+
+    background_tasks.add_task(process_message, Body.strip(), sender)
     return Response(content="", media_type="application/xml")
+
 
 @app.post("/cron/send-booking-reminders")
 def send_booking_reminders(x_cron_secret: str = Header(default="")):
@@ -97,8 +124,12 @@ def send_booking_reminders(x_cron_secret: str = Header(default="")):
         **result
     }
 
+
 @app.post("/twilio/status-callback")
-async def twilio_status_callback(request: Request, x_twilio_signature: str = Header(default="", alias="X-Twilio-Signature")):
+async def twilio_status_callback(
+    request: Request,
+    x_twilio_signature: str = Header(default="", alias="X-Twilio-Signature")
+):
     form = await request.form()
     form_dict = dict(form)
 
@@ -126,6 +157,7 @@ async def twilio_status_callback(request: Request, x_twilio_signature: str = Hea
     }).eq("twilio_sid", message_sid).execute()
 
     return {"ok": True}
+
 
 @app.get("/health")
 def health():
