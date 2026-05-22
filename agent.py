@@ -59,7 +59,7 @@ def get_system_prompt(phone: str = ""):
             - Apply RULE 2 and RULE 3 to resolve.
 
             RULE 2 — Same-day booking (date is today or implied today):
-            - Compare the requested time against the CURRENT IST TIME ({current_time_str}).
+            - Compare the requested time against the CURRENT IST TIME provided in the conversation.
             - If the AM version of the time is already PAST (i.e. current hour >= requested hour+12 is false, but current hour > requested hour for AM):
                 → The AM slot has passed. Automatically assume PM without asking.
                 → Example: It is 4:00 PM and customer says "9 to 11" for today.
