@@ -733,14 +733,7 @@ def edit_booking(
         return f"Error editing booking: {str(e)}"
 
 
-def send_email_confirmation(
-    to_email, to_name, booking_date, time_block,
-    selected_slots, total_price, phone,
-    promo_code="", paddle_rental=0, paddle_cost=0
-) -> bool:
-    """Send booking confirmation email via EmailJS REST API.
-    Returns True if sent successfully, False otherwise."""
-
+def send_email_confirmation(... ) -> bool:
     required_vars = ["EMAILJS_SERVICE_ID", "EMAILJS_TEMPLATE_ID", "EMAILJS_PUBLIC_KEY", "EMAILJS_PRIVATE_KEY"]
     missing = [v for v in required_vars if not os.getenv(v)]
     if missing:
@@ -756,23 +749,7 @@ def send_email_confirmation(
     try:
         response = httpx.post(
             "https://api.emailjs.com/api/v1.0/email/send",
-            json={
-                "service_id": os.getenv("EMAILJS_SERVICE_ID"),
-                "template_id": os.getenv("EMAILJS_TEMPLATE_ID"),
-                "user_id": os.getenv("EMAILJS_PUBLIC_KEY"),
-                "accessToken": os.getenv("EMAILJS_PRIVATE_KEY"),
-                "template_params": {
-                    "to_email": to_email,
-                    "to_name": to_name,
-                    "booking_date": booking_date,
-                    "time_block": time_block.capitalize(),
-                    "selected_slots": selected_slots,
-                    "total_price": str(total_price),
-                    "phone": phone,
-                    "promo_code": promo_display,
-                    "paddle_rental": paddle_line,
-                }
-            },
+            json={...},
             timeout=10
         )
         if response.status_code == 200:
@@ -788,7 +765,12 @@ def send_email_confirmation(
                 },
             )
             return False
-
+    except Exception:
+        logger.exception(
+            "EmailJS confirmation raised an exception",
+            extra={"to_email": to_email}
+        )
+        return False
 @tool
 def edit_booking_total(
     new_total: int,
