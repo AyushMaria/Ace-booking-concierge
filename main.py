@@ -49,11 +49,6 @@ async def process_message(user_message: str, sender: str):
 
         update_session(sender, updated_history)
 
-    if isinstance(reply, list):
-        reply = "\n".join(str(item) for item in reply)
-    elif not isinstance(reply, str):
-        reply = str(reply)
-
     # ── Send messages (split-aware) ───────────────────────────
     parts = [p.strip() for p in reply.split("[SPLIT]") if p.strip()]
 
