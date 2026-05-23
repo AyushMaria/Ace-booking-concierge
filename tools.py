@@ -6,9 +6,6 @@ import os, httpx, json, re
 from dotenv import load_dotenv
 from typing import List
 import pytz
-from logging_config import get_logger
-
-logger = get_logger(__name__)
 
 load_dotenv()
 
@@ -734,16 +731,17 @@ def edit_booking(
 
 
 def send_email_confirmation(
-    to_email, name, date, slot, duration, total_price,
-    phone="", promo_code="", paddle_rental=0, paddle_cost=0
+    to_email, to_name, booking_date, time_block,
+    selected_slots, total_price, phone,
+    promo_code="", paddle_rental=0, paddle_cost=0
 ) -> bool:
+    """Send booking confirmation email via EmailJS REST API.
+    Returns True if sent successfully, False otherwise."""
+
     required_vars = ["EMAILJS_SERVICE_ID", "EMAILJS_TEMPLATE_ID", "EMAILJS_PUBLIC_KEY", "EMAILJS_PRIVATE_KEY"]
     missing = [v for v in required_vars if not os.getenv(v)]
     if missing:
-        logger.error(
-            "Missing EmailJS environment variables",
-            extra={"missing_vars": missing}
-        )
+        print(f"[send_email_confirmation] Missing env vars: {', '.join(missing)}")
         return False
 
     paddle_line = f"{paddle_rental} paddle(s) — ₹{paddle_cost}" if paddle_rental else "None"
@@ -752,28 +750,35 @@ def send_email_confirmation(
     try:
         response = httpx.post(
             "https://api.emailjs.com/api/v1.0/email/send",
-            json={...},
+            json={
+                "service_id": os.getenv("EMAILJS_SERVICE_ID"),
+                "template_id": os.getenv("EMAILJS_TEMPLATE_ID"),
+                "user_id": os.getenv("EMAILJS_PUBLIC_KEY"),
+                "accessToken": os.getenv("EMAILJS_PRIVATE_KEY"),
+                "template_params": {
+                    "to_email": to_email,
+                    "to_name": to_name,
+                    "booking_date": booking_date,
+                    "time_block": time_block.capitalize(),
+                    "selected_slots": selected_slots,
+                    "total_price": str(total_price),
+                    "phone": phone,
+                    "promo_code": promo_display,
+                    "paddle_rental": paddle_line,
+                }
+            },
             timeout=10
         )
         if response.status_code == 200:
-            logger.info("EmailJS confirmation sent", extra={"to_email": to_email})
+            print(f"[EmailJS] ✅ Sent to {to_email}")
             return True
         else:
-            logger.error(
-                "EmailJS confirmation failed",
-                extra={
-                    "to_email": to_email,
-                    "status_code": response.status_code,
-                    "response_text": response.text,
-                },
-            )
+            print(f"[EmailJS] ❌ Failed — status {response.status_code}: {response.text}")
             return False
-    except Exception:
-        logger.exception(
-            "EmailJS confirmation raised an exception",
-            extra={"to_email": to_email}
-        )
+    except Exception as e:
+        print(f"[EmailJS] ❌ Exception: {e}")
         return False
+
 @tool
 def edit_booking_total(
     new_total: int,
@@ -1089,10 +1094,7 @@ def create_customer_profile(phone: str, name: str, email: str) -> dict:
         }, on_conflict="phone").execute()
     
     except Exception as e:
-        logger.exception(
-            "Failed to create or update customer profile",
-            extra={"phone": phone, "name": name, "email": email}
-        )
+        print(f"[create_customer_profile error] {e}")
         return {"success": False, "error": str(e)}
 
 @tool
