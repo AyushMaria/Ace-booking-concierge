@@ -94,7 +94,8 @@ async def webhook(
     form_data = await request.form()
     form_dict = dict(form_data)
 
-    request_url = str(request.url)
+    base_url = os.getenv("WEBHOOK_BASE_URL", "").rstrip("/")
+    request_url = f"{base_url}/webhook" if base_url else str(request.url)
     is_valid = twilio_validator.validate(request_url, form_dict, x_twilio_signature)
 
     if not is_valid:
@@ -131,7 +132,8 @@ async def twilio_status_callback(
     form = await request.form()
     form_dict = dict(form)
 
-    request_url = str(request.url)
+    base_url = os.getenv("WEBHOOK_BASE_URL", "").rstrip("/")
+    request_url = f"{base_url}/twilio/status-callback" if base_url else str(request.url)
     is_valid = twilio_validator.validate(request_url, form_dict, x_twilio_signature)
 
     if not is_valid:
