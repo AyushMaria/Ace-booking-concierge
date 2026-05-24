@@ -28,12 +28,19 @@ admin_tools = [
     get_customer_by_phone, sync_website_customers, initiate_message
 ]
 
-def get_system_prompt(phone: str = ""): 
+def get_system_prompt(phone: str = ""):
+    ist = pytz.timezone("Asia/Kolkata")
+    now = datetime.now(ist)
+    today = now.strftime("%Y-%m-%d")
+    day_name = now.strftime("%A")
+    current_hour = now.hour       
+    current_time_str = now.strftime("%I:%M %p") 
     return f"""
         You are Ace 🎾, the friendly WhatsApp concierge for Vibe & Volley Pickleball Courts
         by Tiny Tots Kindergarten, Chh. Sambhajinagar.
 
-        Use the current date and time provided in the conversation to resolve relative dates like "tomorrow", "this weekend", "next Monday" automatically — never ask the user for the date.
+        Today's date is {today} ({day_name}). Current IST time is {current_time_str}. 
+        Use this to resolve relative dates like "tomorrow", "this weekend", "next Monday" automatically — never ask the user for the date.
 
         You help customers:
         - Check available court slots
@@ -59,7 +66,7 @@ def get_system_prompt(phone: str = ""):
             - Apply RULE 2 and RULE 3 to resolve.
 
             RULE 2 — Same-day booking (date is today or implied today):
-            - Compare the requested time against the CURRENT IST TIME provided in the conversation.
+            - Compare the requested time against the CURRENT IST TIME ({current_time_str}).
             - If the AM version of the time is already PAST (i.e. current hour >= requested hour+12 is false, but current hour > requested hour for AM):
                 → The AM slot has passed. Automatically assume PM without asking.
                 → Example: It is 4:00 PM and customer says "9 to 11" for today.
@@ -195,9 +202,15 @@ def get_system_prompt(phone: str = ""):
         """
 
 def get_admin_prompt():
+    ist = pytz.timezone("Asia/Kolkata")
+    now = datetime.now(ist)
+    today = now.strftime("%Y-%m-%d")
+    day_name = now.strftime("%A")
+    current_hour = now.hour       
+    current_time_str = now.strftime("%I:%M %p") 
     return f"""
         You are Ace 🎾 in ADMIN MODE. You are speaking with the owner and your creator(Ayush Maria) of Vibe & Volley.
-        Use the current date and time provided in the conversation to resolve relative dates like "tomorrow", "this weekend", "next Monday" automatically — never ask the user for the date.
+        Today's date is {today} ({day_name}). Current IST time is {current_time_str}.
 
         You have full database access and can:
         - View all bookings for any date
@@ -250,72 +263,55 @@ def get_admin_prompt():
 
 
 print("ADMIN TOOLS LOADED:", [getattr(t, "name", str(t)) for t in admin_tools])
-
-# NEW: Cache agents at module level so they are built exactly once on import.
-# The prompts are now static, so the graph structure never changes.
-customer_agent = create_react_agent(model=llm, tools=customer_tools, prompt=get_system_prompt())
-admin_agent = create_react_agent(model=llm, tools=admin_tools, prompt=get_admin_prompt())
-
-def _build_time_context() -> str:
-    """Returns a system message with current IST date/time for the LLM to use."""
-    ist = pytz.timezone("Asia/Kolkata")
-    now = datetime.now(ist)
-    today = now.strftime("%Y-%m-%d")
-    day_name = now.strftime("%A")
-    current_time_str = now.strftime("%I:%M %p")
-    return (
-        f"[SYSTEM CONTEXT] Today is {today} ({day_name}). "
-        f"Current IST time is {current_time_str}. "
-        f"Use this information to resolve relative dates and times."
-    )
-
+# AFTER
 def run_agent(phone: str, user_message: str, history: list) -> tuple[str, list]:
-    # NEW: Inject fresh time context as the first message in this turn
-    time_context = {"role": "system", "content": _build_time_context()}
+    """Run the customer agent."""
+    agent = create_react_agent(model=llm, tools=customer_tools, prompt=get_system_prompt(phone))
+    history.append({"role": "user", "content": user_message})
     
-    messages = list(history)
-    messages.append(time_context)
-    messages.append({"role": "user", "content": user_message})
-
     try:
-        result = customer_agent.invoke({"messages": messages})  # Use cached agent
-        messages_out = result["messages"]
-        ai_messages = [m for m in messages_out if hasattr(m, 'type') and m.type == "ai"]
-        raw_reply = ai_messages[-1].content if ai_messages else "Sorry..."
+        result = agent.invoke({"messages": history})
+        messages = result["messages"]
+        ai_messages = [m for m in messages if hasattr(m, 'type') and m.type == "ai"]
+        raw_reply = ai_messages[-1].content if ai_messages else "Sorry, I couldn't process that."
         reply = _parse_reply(raw_reply)
     except Exception as e:
         print(f"[run_agent error] {e}")
-        reply = "Sorry, I'm having a little trouble right now..."
-
-    history.append({"role": "user", "content": user_message})
+        reply = "Sorry, I'm having a little trouble right now. Please try again in a moment! 🙏"
+    
     history.append({"role": "assistant", "content": reply})
     return reply, history
 
 def run_admin_agent(phone: str, user_message: str, history: list) -> tuple[str, list]:
     """Run the admin agent."""
-    # NEW: Inject fresh time context as the first message in this turn
-    time_context = {"role": "system", "content": _build_time_context()}
-    
-    messages = list(history)
-    messages.append(time_context)
-    messages.append({"role": "user", "content": user_message})
+    agent = create_react_agent(model=llm, tools=admin_tools, prompt=get_admin_prompt())
+    history.append({"role": "user", "content": user_message})
     
     try:
-        result = customer_agent.invoke({"messages": messages})  # Use cached agent
-        messages_out = result["messages"]
-        ai_messages = [m for m in messages_out if hasattr(m, 'type') and m.type == "ai"]
-        raw_reply = ai_messages[-1].content if ai_messages else "Sorry..."
+        result = agent.invoke({"messages": history})
+        messages = result["messages"]
+        ai_messages = [m for m in messages if hasattr(m, 'type') and m.type == "ai"]
+        raw_reply = ai_messages[-1].content if ai_messages else "Sorry, I couldn't process that."
         reply = _parse_reply(raw_reply)
     except Exception as e:
         print(f"[run_agent error] {e}")
-        reply = "Sorry, I'm having a little trouble right now..."
-
-    history.append({"role": "user", "content": user_message})
+        reply = "Sorry, I'm having a little trouble right now. Please try again in a moment! 🙏"
+    
     history.append({"role": "assistant", "content": reply})
     return reply, history
 
-def _parse_reply(raw_reply):
-    """Extracts clean text from the LLM response."""
-    if isinstance(raw_reply, list):
-        return "\n".join(str(item) for item in raw_reply)
+def _parse_reply(raw_reply) -> str:
+    """Safely convert LLM reply to plain string."""
+    if isinstance(raw_reply, str):
+        return raw_reply
+    elif isinstance(raw_reply, list):
+        parts = []
+        for block in raw_reply:
+            if isinstance(block, str):
+                parts.append(block)
+            elif isinstance(block, dict) and block.get("type") == "text":
+                parts.append(block["text"])
+        return "\n".join(parts)
+    elif isinstance(raw_reply, dict) and raw_reply.get("type") == "text":
+        return raw_reply["text"]
     return str(raw_reply)
