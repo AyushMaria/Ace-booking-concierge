@@ -181,6 +181,21 @@ def check_available_slots(booking_date: str, time_block: str) -> str:
         return f"Error checking slots: {str(e)}"
 
 
+def get_slot_price(slot: str) -> int:
+    """Return price in ₹ for a 30-min slot based on time of day.
+    Slots between 9:00 AM and 5:00 PM → ₹150 (= ₹300/hr)
+    All other slots → ₹250 (= ₹500/hr)
+    """
+    try:
+        start_str = slot.split(" - ")[0].strip()  # e.g. "9:00 AM"
+        slot_hour = datetime.strptime(start_str, "%I:%M %p").hour
+        if 9 <= slot_hour < 17:  # 9 AM to 5 PM (exclusive)
+            return 150
+        return 250
+    except Exception:
+        return 250  # fallback to default
+
+
 @tool
 def create_booking(
     name: str,
@@ -232,8 +247,8 @@ def create_booking(
         if conflict:
             return f"Sorry, these slots were just taken: {', '.join(conflict)}. Please choose different slots."
 
-        # Base price
-        total_price = len(slots) * 250
+        # Base price (time-based: ₹300/hr for 9 AM–5 PM, ₹500/hr otherwise)
+        total_price = sum(get_slot_price(s) for s in slots)
 
         # Paddle rental pricing
         if paddle_rental < 0 or paddle_rental > 2:
@@ -681,7 +696,7 @@ def edit_booking(
 
         # Recalculate price if slots or promo changed
         if new_slots or new_promo_code is not None:
-            base_price = len(active_slots) * 250
+            base_price = sum(get_slot_price(s) for s in active_slots)
             paddle_rental = b.get("paddle_rental", 0) or 0
             paddle_cost = round(paddle_rental * 50 * len(active_slots) * 0.5)
             new_total = base_price + paddle_cost
