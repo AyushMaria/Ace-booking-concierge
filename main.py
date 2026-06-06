@@ -20,10 +20,8 @@ ADMIN_PHONE = normalize_phone(os.getenv("ADMIN_PHONE", "")).replace("+91", "").r
 CRON_SECRET = os.getenv("CRON_SECRET", "")
 
 
-async def process_message(user_message: str, sender: str):
+async def process_message(user_message: str, sender: str, phone: str):
     """Runs in background — no Twilio timeout risk."""
-    raw_phone = sender.replace("whatsapp:", "")
-    phone = normalize_phone(raw_phone)
     clean_phone = phone.replace("+91", "").replace(" ", "")
 
     # ── Admin login/logout intercept ──────────────────────────
@@ -75,7 +73,9 @@ async def webhook(
     From: str = Form(...)
 ):
     """Responds to Twilio instantly, processes in background."""
-    background_tasks.add_task(process_message, Body.strip(), From)
+    raw_phone = From.replace("whatsapp:", "")
+    phone = normalize_phone(raw_phone)
+    background_tasks.add_task(process_message, Body.strip(), From, phone)
     return Response(content="", media_type="application/xml")
 
 

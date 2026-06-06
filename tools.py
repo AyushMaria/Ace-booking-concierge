@@ -214,7 +214,7 @@ def create_booking(
     slots: list of slot strings e.g. ["7:00 PM - 7:30 PM"]
     """
     try:
-        canonical_phone = normalize_phone(phone)
+        canonical_phone = phone
         provided_email = (email or "").strip()
 
         customer_lookup = supabase.table("customers") \
@@ -1054,11 +1054,8 @@ def get_customer_by_phone(phone: str) -> dict:
 def create_customer_profile(phone: str, name: str, email: str) -> dict:
     """Save or update a customer's profile in the customers table."""
     try:
-        
-        canonical_phone = normalize_phone(phone)
-
         supabase.table("customers").upsert({
-            "phone": canonical_phone,
+            "phone": phone,
             "name": name,
             "email": email
         }, on_conflict="phone").execute()
