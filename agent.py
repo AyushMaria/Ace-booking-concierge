@@ -29,7 +29,7 @@ admin_tools = [
     get_customer_by_phone, sync_website_customers, initiate_message
 ]
 
-def get_system_prompt(phone: str = ""):
+def get_system_prompt(phone: str = "", user_message: str = ""):
     ist = pytz.timezone("Asia/Kolkata")
     now = datetime.now(ist)
     today = now.strftime("%Y-%m-%d")
