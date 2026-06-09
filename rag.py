@@ -69,9 +69,7 @@ def seed_knowledge():
                 "never assume.\n"
                 "RULE 4 — Explicit AM/PM given: resolve immediately, no "
                 "question.\n"
-                "RULE 5 — Time between 11 AM and 4 PM: court is closed, offer "
-                "nearest slot or call +919156156570.\n"
-                "RULE 6 — '11' for today in evening → assume 11 PM. Never book "
+                "RULE 5 — '11' for today in evening → assume 11 PM. Never book "
                 "past 12:00 AM. Never suggest a slot that already started."
             )
         },
