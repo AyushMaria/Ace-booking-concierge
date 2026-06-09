@@ -490,6 +490,9 @@ def block_slots(booking_date: str, slots: List[str]) -> str:
         }).execute()
         return f"🚫 Slots blocked on {booking_date}: {', '.join(slots)}"
 
+    except Exception as e:
+        return f"Error blocking slots: {str(e)}"
+
 
 @tool
 def get_booking_stats() -> str:
