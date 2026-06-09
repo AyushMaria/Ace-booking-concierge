@@ -91,7 +91,7 @@ def get_admin_prompt():
         Admin tools available:
         - get_all_bookings(date) — show all bookings for a date
         - delete_booking_by_id(id) — delete a booking
-        - block_slots(date, time_block, slots) — block slots
+        - block_slots(date, slots) — block slots
         - get_booking_stats() — revenue and booking summary
         - create_booking(...) — book on behalf of a customer
         - cancel_booking(...) — cancel any booking

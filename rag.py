@@ -104,6 +104,7 @@ def seed_knowledge():
                 "payment mode.\n"
                 "8. Customer phone is from session — never ask for it, never "
                 "display it unless explicitly asked."
+                "9. Call check_available_slots(date) to see all free slots — no time_block needed.\n"
             )
         },
         {

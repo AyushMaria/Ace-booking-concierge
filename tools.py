@@ -58,6 +58,15 @@ TIME_SLOTS = [
             "11:00 PM - 11:30 PM", "11:30 PM - 12:00 AM"
 ]
 
+def derive_time_block(slot: str) -> str:
+    start_str = slot.split(" - ")[0].strip()
+    hour = datetime.strptime(start_str, "%I:%M %p").hour
+    if hour < 12:
+        return "morning"
+    elif hour < 17:
+        return "afternoon"
+    return "evening"
+
 @tool
 def initiate_message(phone: str) -> str:
     """
@@ -126,28 +135,20 @@ def initiate_message(phone: str) -> str:
         return f"❌ Failed to send initiation message: {error_text}"
 
 @tool
-def check_available_slots(booking_date: str, time_block: str) -> str:
+def check_available_slots(booking_date: str) -> str:
     """
-    Check which slots are available for a given date and time block.
+    Check which slots are available for a given date.
     booking_date: YYYY-MM-DD format
-    time_block: 'morning', 'afternoon', or 'evening'
+    Returns all available slots across the full day (7 AM - 12 AM).
     """
     try:
         ist = pytz.timezone("Asia/Kolkata")
         now = datetime.now(ist)
         today = now.strftime("%Y-%m-%d")
 
-        # Block morning slots for tomorrow if request is made after 11 PM
-        if (time_block == "morning" and
-            now.hour >= 23 and
-            booking_date == (now + timedelta(days=1)).strftime("%Y-%m-%d")
-        ):
-            return "Morning slots for tomorrow are not available for booking after 11:00 PM. Please consider afternoon (4:00 PM onwards) or evening slots."
-
         response = supabase.table("bookings") \
             .select("slots") \
             .eq("booking_date", booking_date) \
-            .eq("time_block", time_block) \
             .execute()
 
         booked = []
@@ -156,15 +157,13 @@ def check_available_slots(booking_date: str, time_block: str) -> str:
             if isinstance(slots, list):
                 booked.extend(slots)
             elif isinstance(slots, str):
-                import json
                 booked.extend(json.loads(slots))
 
-        all_slots = TIME_SLOTS.get(time_block, [])
-        available = [s for s in all_slots if s not in booked]
+        available = [s for s in TIME_SLOTS if s not in booked]
 
         if booking_date == today:
             def slot_start_passed(slot_str):
-                start_str = slot_str.split(" - ")[0]   # e.g. "10:30 PM"
+                start_str = slot_str.split(" - ")[0]
                 slot_start = datetime.strptime(f"{booking_date} {start_str}", "%Y-%m-%d %I:%M %p")
                 slot_start = ist.localize(slot_start)
                 return slot_start <= now
@@ -172,8 +171,8 @@ def check_available_slots(booking_date: str, time_block: str) -> str:
             available = [s for s in available if not slot_start_passed(s)]
 
         if not available:
-            return f"No slots available for {time_block} on {booking_date}."
-        return f"Available {time_block} slots on {booking_date}:\n" + \
+            return f"No slots available on {booking_date}."
+        return f"Available slots on {booking_date}:\n" + \
                "\n".join(f"- {s}" for s in available)
 
     except Exception as e:
@@ -200,7 +199,6 @@ def create_booking(
     name: str,
     phone: str,
     booking_date: str,
-    time_block: str,
     slots: List[str],
     email: str = "",
     promo_code: str = "",
@@ -231,10 +229,11 @@ def create_booking(
             return "❌ I couldn't find an email for this booking. Please provide the customer's email."
 
         # Check for conflicts first
+        time_block = derive_time_block(slots[0])
+
         response = supabase.table("bookings") \
             .select("slots") \
             .eq("booking_date", booking_date) \
-            .eq("time_block", time_block) \
             .execute()
 
         booked = []
@@ -471,14 +470,14 @@ def delete_booking_by_id(booking_id: int) -> str:
 
 
 @tool
-def block_slots(booking_date: str, time_block: str, slots: List[str]) -> str:
+def block_slots(booking_date: str, slots: List[str]) -> str:
     """
     Admin: Block specific slots on a date so customers can't book them.
     booking_date: YYYY-MM-DD
-    time_block: 'morning', 'afternoon', or 'evening'
     slots: list of slot strings to block
     """
     try:
+        time_block = derive_time_block(slots[0])
         supabase.table("bookings").insert({
             "name": "BLOCKED",
             "phone": "0000000000",
@@ -489,10 +488,7 @@ def block_slots(booking_date: str, time_block: str, slots: List[str]) -> str:
             "promo_code": None,
             "total_price": 0
         }).execute()
-        return f"🚫 Slots blocked on {booking_date} ({time_block}): {', '.join(slots)}"
-
-    except Exception as e:
-        return f"Error blocking slots: {str(e)}"
+        return f"🚫 Slots blocked on {booking_date}: {', '.join(slots)}"
 
 
 @tool
