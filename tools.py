@@ -46,8 +46,8 @@ def phone_variants(phone: str) -> List[str]:
 TIME_SLOTS = [
             "7:00 AM - 7:30 AM", "7:30 AM - 8:00 AM", "8:00 AM - 8:30 AM",
             "8:30 AM - 9:00 AM", "9:00 AM - 9:30 AM", "9:30 AM - 10:00 AM",
-            "10:00 AM - 10:30 AM","10:30 AM - 11:00 AM,11:00 AM - 11:30 AM,"
-            "11:30 AM - 12:00 PM ", "12:00 PM - 12:30 PM", "12:30 PM - 1:00 PM", 
+            "10:00 AM - 10:30 AM", "10:30 AM - 11:00 AM", "11:00 AM - 11:30 AM",
+            "11:30 AM - 12:00 PM", "12:00 PM - 12:30 PM", "12:30 PM - 1:00 PM",
             "1:00 PM - 1:30 PM", "1:30 PM - 2:00 PM", "2:00 PM - 2:30 PM",
             "2:30 PM - 3:00 PM", "3:00 PM - 3:30 PM", "3:30 PM - 4:00 PM",
             "4:00 PM - 4:30 PM", "4:30 PM - 5:00 PM", "5:00 PM - 5:30 PM",
@@ -57,6 +57,17 @@ TIME_SLOTS = [
             "10:00 PM - 10:30 PM","10:30 PM - 11:00 PM",
             "11:00 PM - 11:30 PM", "11:30 PM - 12:00 AM"
 ]
+
+def parse_slots(slots_field) -> list:
+    if isinstance(slots_field, list):
+        return slots_field
+    if isinstance(slots_field, str):
+        try:
+            return json.loads(slots_field)
+        except json.JSONDecodeError:
+            print(f"[parse_slots] Corrupted slots data: {slots_field!r}")
+            return []
+    return []
 
 def derive_time_block(slot: str) -> str:
     start_str = slot.split(" - ")[0].strip()
@@ -153,11 +164,8 @@ def check_available_slots(booking_date: str) -> str:
 
         booked = []
         for row in response.data:
-            slots = row["slots"]
-            if isinstance(slots, list):
-                booked.extend(slots)
-            elif isinstance(slots, str):
-                booked.extend(json.loads(slots))
+            slots = parse_slots(row["slots"])
+            booked.extend(slots)
 
         available = [s for s in TIME_SLOTS if s not in booked]
 
@@ -239,7 +247,7 @@ def create_booking(
         booked = []
         for row in response.data:
             s = row["slots"]
-            booked.extend(s if isinstance(s, list) else __import__('json').loads(s))
+            booked.extend(parse_slots(s))
 
         conflict = [s for s in slots if s in booked]
         if conflict:
@@ -407,7 +415,7 @@ def get_my_bookings(phone: str) -> str:
 
         lines = []
         for b in result.data:
-            slots = b["slots"] if isinstance(b["slots"], list) else __import__('json').loads(b["slots"])
+            slots = parse_slots(b["slots"])
             lines.append(
                 f"📅 {b['booking_date']} | {b['time_block'].capitalize()} | "
                 f"{', '.join(slots)} | ₹{b['total_price']}"
@@ -436,7 +444,7 @@ def get_all_bookings(booking_date: str) -> str:
 
         lines = []
         for b in result.data:
-            slots = b["slots"] if isinstance(b["slots"], list) else __import__('json').loads(b["slots"])
+            slots = parse_slots(b["slots"])
             lines.append(
                 f"🆔 ID: {b['id']} | 👤 {b['name']} | 📞 {b['phone']} | "
                 f"⏰ {', '.join(slots)} | 💰 ₹{b['total_price']}"
@@ -547,7 +555,7 @@ def get_bookings_by_phone(phones: List[str]) -> str:
 
         lines = []
         for b in result.data:
-            slots = b["slots"] if isinstance(b["slots"], list) else __import__('json').loads(b["slots"])
+            slots = parse_slots(b["slots"])
             lines.append(
                 f"🆔 ID: {b['id']} | 👤 {b['name']} | 📞 {b['phone']} | "
                 f"📅 {b['booking_date']} | ⏰ {', '.join(slots)} | 💰 ₹{b['total_price']}"
@@ -591,7 +599,7 @@ def get_bookings_by_name(names: List[str]) -> str:
 
         lines = []
         for b in unique:
-            slots = b["slots"] if isinstance(b["slots"], list) else __import__('json').loads(b["slots"])
+            slots = parse_slots(b["slots"])
             lines.append(
                 f"🆔 ID: {b['id']} | 👤 {b['name']} | 📞 {b['phone']} | "
                 f"📅 {b['booking_date']} | ⏰ {', '.join(slots)} | 💰 ₹{b['total_price']}"
@@ -679,9 +687,7 @@ def edit_booking(
         if new_email: updates["email"] = new_email
 
         # Use new_slots if provided, else fall back to existing slots
-        active_slots = new_slots if new_slots else (
-            b["slots"] if isinstance(b["slots"], list) else json.loads(b["slots"])
-        )
+        active_slots = new_slots if new_slots else parse_slots(b["slots"])
         if new_slots:
             updates["slots"] = new_slots
 

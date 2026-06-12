@@ -5,7 +5,7 @@ import pytz
 from twilio.rest import Client
 from supabase import create_client
 from dotenv import load_dotenv
-from tools import normalize_phone
+from tools import normalize_phone, parse_slots
 
 load_dotenv()
 
@@ -66,9 +66,7 @@ def run_booking_reminders(window_start_mins: int = 60, window_end_mins: int = 12
             skipped += 1
             continue
 
-        slots = booking["slots"]
-        if isinstance(slots, str):
-            slots = json.loads(slots)
+        slots = parse_slots(booking["slots"])
 
         if not slots:
             skipped += 1
