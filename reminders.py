@@ -3,6 +3,7 @@ import os
 import json
 import pytz
 from twilio.rest import Client
+from twilio.base.exceptions import TwilioRestException
 from supabase import create_client
 from dotenv import load_dotenv
 from tools import normalize_phone, parse_slots
@@ -22,6 +23,7 @@ twilio_client = Client(
 )
 
 TWILIO_NUMBER = os.environ["TWILIO_WHATSAPP_NUMBER"]
+REMINDER_CONTENT_SID = os.environ["WHATSAPP_REMINDER_TEMPLATE_SID"]
 
 
 def parse_slot_start(booking_date: str, slot_str: str) -> datetime:
@@ -35,11 +37,12 @@ def parse_slot_start(booking_date: str, slot_str: str) -> datetime:
     return dt
 
 
-def send_whatsapp_reminder(to_phone: str, body: str) -> None:
+def send_whatsapp_reminder(to_phone: str, name: str, date: str, slots: str) -> None:
     twilio_client.messages.create(
         from_=TWILIO_NUMBER,
         to=f"whatsapp:{to_phone}" if not to_phone.startswith("whatsapp:") else to_phone,
-        body=body
+        content_sid=REMINDER_CONTENT_SID,
+        content_variables=json.dumps({"1": name, "2": date, "3": slots})
     )
 
 
@@ -81,16 +84,13 @@ def run_booking_reminders(window_start_mins: int = 60, window_end_mins: int = 12
             continue
 
         try:
-            reminder_text = (
-                f"Hey {booking['name']}! 🎾\n"
-                f"This is a reminder that your court booking is coming up soon.\n"
-                f"📅 Date: {booking['booking_date']}\n"
-                f"⏰ Slot(s): {', '.join(slots)}\n"
-                f"See you at Vibe & Volley!"
-            )
-
             normalized_phone = normalize_phone(booking["phone"])
-            send_whatsapp_reminder(normalized_phone, reminder_text)
+            send_whatsapp_reminder(
+                to_phone=normalized_phone,
+                name=booking["name"],
+                date=booking["booking_date"],
+                slots=", ".join(slots),
+            )
 
             supabase.table("bookings") \
                 .update({"reminder_sent_at": now.isoformat()}) \
@@ -99,6 +99,14 @@ def run_booking_reminders(window_start_mins: int = 60, window_end_mins: int = 12
 
             sent += 1
 
+        except TwilioRestException as e:
+            if e.code == 63016:
+                errors.append(
+                    f"Booking {booking['id']}: user has no WhatsApp session — "
+                    f"send an opt-in template first"
+                )
+            else:
+                errors.append(f"Booking {booking['id']}: {str(e)}")
         except Exception as e:
             errors.append(f"Booking {booking['id']}: {str(e)}")
 

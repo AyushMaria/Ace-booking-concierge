@@ -202,3 +202,7 @@ __pycache__/
 # OS files
 .DS_Store
 Thumbs.db
+
+# Local notes / scratch
+temp.md
+todo.md
