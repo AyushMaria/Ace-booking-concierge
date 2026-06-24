@@ -2,10 +2,83 @@ from supabase import create_client
 from langchain_core.tools import tool
 from datetime import date, datetime, timedelta
 from twilio.rest import Client
-import os, httpx, json, re
+import os, httpx, json, re, calendar
 from dotenv import load_dotenv
-from typing import List
+from typing import List, Optional
 import pytz
+
+IST = pytz.timezone("Asia/Kolkata")
+
+WEEKDAY_MAP = {
+    "monday": 0, "mon": 0,
+    "tuesday": 1, "tue": 1, "tues": 1,
+    "wednesday": 2, "wed": 2,
+    "thursday": 3, "thu": 3, "thur": 3, "thurs": 3,
+    "friday": 4, "fri": 4,
+    "saturday": 5, "sat": 5,
+    "sunday": 6, "sun": 6,
+}
+
+def resolve_date(text: str, today: Optional[date] = None) -> Optional[str]:
+    """
+    Convert a natural-language date string into YYYY-MM-DD.
+    Returns None if it cannot be resolved deterministically.
+
+    Supports: 'today', 'tomorrow', 'day after tomorrow',
+    'next <weekday>', '<weekday>', and explicit ISO or
+    'DD-MM-YYYY' / 'DD/MM/YYYY' / 'DD Mon YYYY' forms.
+    """
+    if not text:
+        return None
+    today = today or datetime.now(IST).date()
+    raw = text.strip().lower()
+    raw = re.sub(r"[\s,]+", " ", raw)
+
+    # Already a clean ISO date
+    m = re.fullmatch(r"(\d{4})-(\d{1,2})-(\d{1,2})", raw)
+    if m:
+        try:
+            d = date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+            return d.isoformat()
+        except ValueError:
+            return None
+
+    # DD-MM-YYYY / DD/MM/YYYY
+    m = re.fullmatch(r"(\d{1,2})[-/](\d{1,2})[-/](\d{4})", raw)
+    if m:
+        try:
+            d = date(int(m.group(3)), int(m.group(2)), int(m.group(1)))
+            return d.isoformat()
+        except ValueError:
+            return None
+
+    # DD Mon YYYY  (e.g. "5 Aug 2025")
+    for fmt in ("%d %b %Y", "%d %B %Y"):
+        try:
+            return datetime.strptime(raw, fmt).date().isoformat()
+        except ValueError:
+            continue
+
+    # Relative keywords
+    if raw in ("today", "tdy"):
+        return today.isoformat()
+    if raw in ("tomorrow", "tmrw", "tom"):
+        return (today + timedelta(days=1)).isoformat()
+    if raw in ("day after tomorrow", "dat"):
+        return (today + timedelta(days=2)).isoformat()
+
+    # 'next <weekday>' or bare weekday — both resolve to the next upcoming
+    # occurrence of that weekday. delta==0 (today is that weekday) bumps to
+    # next week so we never return "today" as the answer.
+    m = re.fullmatch(r"(?:next\s+)?([a-z]+)", raw)
+    if m and m.group(1) in WEEKDAY_MAP:
+        target = WEEKDAY_MAP[m.group(1)]
+        delta = (target - today.weekday()) % 7
+        if delta == 0:           # same weekday → next week
+            delta = 7
+        return (today + timedelta(days=delta)).isoformat()
+
+    return None
 
 load_dotenv()
 
@@ -149,13 +222,26 @@ def initiate_message(phone: str) -> str:
 def check_available_slots(booking_date: str) -> str:
     """
     Check which slots are available for a given date.
-    booking_date: YYYY-MM-DD format
+    booking_date MUST be a strict YYYY-MM-DD string produced by resolve_date()
+    (e.g. "2025-08-17"). Do NOT pass 'tomorrow', 'next Monday', or a weekday
+    name — resolve them to ISO first. Past dates are rejected.
     Returns all available slots across the full day (7 AM - 12 AM).
     """
     try:
         ist = pytz.timezone("Asia/Kolkata")
         now = datetime.now(ist)
         today = now.strftime("%Y-%m-%d")
+
+        resolved = resolve_date(booking_date, now.date())
+        if not resolved:
+            return (
+                f"❌ '{booking_date}' is not a recognised date. "
+                f"Ask the customer for an exact date (e.g. '17 Aug 2025')."
+            )
+        booking_date = resolved
+
+        if date.fromisoformat(booking_date) < now.date():
+            return f"❌ {booking_date} is in the past. Pick a future date."
 
         response = supabase.table("bookings") \
             .select("slots") \
@@ -216,9 +302,26 @@ def create_booking(
 
     """
     Create a booking in the database and send email confirmation.
+    booking_date MUST be a strict YYYY-MM-DD string from resolve_date()
+    (e.g. "2025-08-17"). Never pass 'tomorrow', weekday names, or a date you
+    have not already stated back to the customer for confirmation.
     slots: list of slot strings e.g. ["7:00 PM - 7:30 PM"]
     """
     try:
+        ist = pytz.timezone("Asia/Kolkata")
+        today = datetime.now(ist).date()
+
+        resolved = resolve_date(booking_date, today)
+        if not resolved:
+            return (
+                f"❌ Booking refused: '{booking_date}' is not a valid date. "
+                f"Resolve it to YYYY-MM-DD before calling create_booking."
+            )
+        booking_date = resolved
+
+        if date.fromisoformat(booking_date) < today:
+            return f"❌ Booking refused: {booking_date} is in the past."
+        
         canonical_phone = phone
         provided_email = (email or "").strip()
 
@@ -374,6 +477,20 @@ def cancel_booking(phone: str, booking_date: str) -> str:
     Cancel a booking by phone number and date.
     """
     try:
+        ist = pytz.timezone("Asia/Kolkata")
+        today = datetime.now(ist).date()
+
+        resolved = resolve_date(booking_date, today)
+        if not resolved:
+            return (
+                f"❌ Booking refused: '{booking_date}' is not a valid date. "
+                f"Resolve it to YYYY-MM-DD before calling create_booking."
+            )
+        booking_date = resolved
+
+        if date.fromisoformat(booking_date) < today:
+            return f"❌ Booking refused: {booking_date} is in the past."
+        
         variants = phone_variants(phone)
 
         result = supabase.table("bookings") \
@@ -433,6 +550,20 @@ def get_all_bookings(booking_date: str) -> str:
     booking_date: YYYY-MM-DD format
     """
     try:
+        ist = pytz.timezone("Asia/Kolkata")
+        today = datetime.now(ist).date()
+
+        resolved = resolve_date(booking_date, today)
+        if not resolved:
+            return (
+                f"❌ Booking refused: '{booking_date}' is not a valid date. "
+                f"Resolve it to YYYY-MM-DD before calling create_booking."
+            )
+        booking_date = resolved
+
+        if date.fromisoformat(booking_date) < today:
+            return f"❌ Booking refused: {booking_date} is in the past."
+        
         result = supabase.table("bookings") \
             .select("*") \
             .eq("booking_date", booking_date) \
@@ -485,6 +616,20 @@ def block_slots(booking_date: str, slots: List[str]) -> str:
     slots: list of slot strings to block
     """
     try:
+        ist = pytz.timezone("Asia/Kolkata")
+        today = datetime.now(ist).date()
+
+        resolved = resolve_date(booking_date, today)
+        if not resolved:
+            return (
+                f"❌ Booking refused: '{booking_date}' is not a valid date. "
+                f"Resolve it to YYYY-MM-DD before calling create_booking."
+            )
+        booking_date = resolved
+
+        if date.fromisoformat(booking_date) < today:
+            return f"❌ Booking refused: {booking_date} is in the past."
+        
         time_block = derive_time_block(slots[0])
         supabase.table("bookings").insert({
             "name": "BLOCKED",
@@ -673,6 +818,20 @@ def edit_booking(
     new_promo_code: apply or change the promo code on this booking (pass empty string "" to remove it)
     """
     try:
+        ist = pytz.timezone("Asia/Kolkata")
+        today = datetime.now(ist).date()
+
+        resolved = resolve_date(booking_date, today)
+        if not resolved:
+            return (
+                f"❌ Booking refused: '{booking_date}' is not a valid date. "
+                f"Resolve it to YYYY-MM-DD before calling create_booking."
+            )
+        booking_date = resolved
+
+        if date.fromisoformat(booking_date) < today:
+            return f"❌ Booking refused: {booking_date} is in the past."
+        
         existing = supabase.table("bookings").select("*").eq("id", booking_id).execute()
         if not existing.data:
             return f"No booking found with ID {booking_id}."

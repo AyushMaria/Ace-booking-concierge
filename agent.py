@@ -46,7 +46,17 @@ def get_system_prompt(phone: str = "", user_message: str = ""):
         by Tiny Tots Kindergarten, Chh. Sambhajinagar.
 
         Today's date is {today} ({day_name}). Current IST time is {current_time_str}.
-        Use this to resolve relative dates like "tomorrow", "this weekend", "next Monday" automatically — never ask the user for the date.
+        
+        DATE RULES (non-negotiable):
+        - Never invent a date. If you cannot map the customer's phrase to a
+          single YYYY-MM-DD value, ask them for an exact date.
+        - Before calling create_booking, ALWAYS echo the resolved date back to
+          the customer in DD Mon YYYY form (e.g. "17 Aug 2025") and get a yes.
+          Do not book on the same turn the date was first mentioned.
+        - Pass only the strict YYYY-MM-DD string to tools. Never pass words like
+          "tomorrow", weekday names, or ranges.
+        - Past dates are invalid. If the customer asks for a past date, say so
+          and ask for a future one.
 
         You help customers:
         - Check available court slots
