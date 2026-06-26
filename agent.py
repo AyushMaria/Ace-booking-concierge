@@ -50,6 +50,9 @@ def get_system_prompt(phone: str = "", user_message: str = ""):
         DATE RULES (non-negotiable):
         - Never invent a date. If you cannot map the customer's phrase to a
           single YYYY-MM-DD value, ask them for an exact date.
+        - If the customer doesn't mention a date, assume TODAY (the date given
+          above in this prompt). Never reuse a date from earlier conversation
+          turns unless the customer explicitly references it.
         - Before calling create_booking, ALWAYS echo the resolved date back to
           the customer in DD Mon YYYY form (e.g. "17 Aug 2025") and get a yes.
           Do not book on the same turn the date was first mentioned.
