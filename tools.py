@@ -381,7 +381,7 @@ def create_booking(
 
             p = promo.data[0]
 
-            if p["expires_at"] and date.fromisoformat(p["expires_at"]) < date.today():
+            if p["expires_at"] and date.fromisoformat(p["expires_at"]) < datetime.now(IST).date():
                 return "❌ This promo code has expired."
 
             if len(slots) < p["min_slots"]:
@@ -517,7 +517,7 @@ def get_my_bookings(phone: str) -> str:
     Get all upcoming bookings for a phone number.
     """
     try:
-        today = date.today().isoformat()
+        today = datetime.now(IST).date().isoformat() 
         variants = phone_variants(phone)
 
         result = supabase.table("bookings") \
@@ -560,9 +560,6 @@ def get_all_bookings(booking_date: str) -> str:
                 f"Resolve it to YYYY-MM-DD before calling create_booking."
             )
         booking_date = resolved
-
-        if date.fromisoformat(booking_date) < today:
-            return f"❌ Booking refused: {booking_date} is in the past."
         
         result = supabase.table("bookings") \
             .select("*") \
@@ -664,7 +661,7 @@ def get_booking_stats() -> str:
         total_bookings = len(result.data)
         total_revenue = sum(b["total_price"] for b in result.data)
 
-        today = date.today().isoformat()
+        today = datetime.now(IST).date().isoformat()
         today_bookings = [b for b in result.data if b["booking_date"] == today]
 
         return (
@@ -820,17 +817,18 @@ def edit_booking(
     try:
         ist = pytz.timezone("Asia/Kolkata")
         today = datetime.now(ist).date()
+        
+        if new_date:
+            resolved = resolve_date(new_date, today)
+            if not resolved:
+                return (
+                    f"❌ Booking refused: '{new_date}' is not a valid date. "
+                    f"Resolve it to YYYY-MM-DD before calling create_booking."
+                )
+            new_date = resolved
 
-        resolved = resolve_date(booking_date, today)
-        if not resolved:
-            return (
-                f"❌ Booking refused: '{booking_date}' is not a valid date. "
-                f"Resolve it to YYYY-MM-DD before calling create_booking."
-            )
-        booking_date = resolved
-
-        if date.fromisoformat(booking_date) < today:
-            return f"❌ Booking refused: {booking_date} is in the past."
+        if date.fromisoformat(new_date) < today:
+            return f"❌ Booking refused: {new_date} is in the past."
         
         existing = supabase.table("bookings").select("*").eq("id", booking_id).execute()
         if not existing.data:
@@ -877,7 +875,7 @@ def edit_booking(
 
                 p = promo.data[0]
 
-                if p["expires_at"] and date.fromisoformat(p["expires_at"]) < date.today():
+                if p["expires_at"] and date.fromisoformat(p["expires_at"]) < datetime.now(IST).date():
                     return f"❌ Promo code {promo_to_apply} has expired."
 
                 if len(active_slots) < p["min_slots"]:

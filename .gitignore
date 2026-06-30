@@ -206,3 +206,6 @@ Thumbs.db
 # Local notes / scratch
 temp.md
 todo.md
+
+# Local database migrations (run manually in Supabase, not deployed)
+migrations/
