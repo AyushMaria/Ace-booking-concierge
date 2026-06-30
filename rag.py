@@ -50,6 +50,10 @@ def seed_knowledge():
                 "Standard price: ₹250 per 30-min slot (₹500/hour).\n"
                 "Off-peak price (9:00 AM–5:00 PM): ₹150 per 30-min slot "
                 "(₹300/hour).\n"
+                "IMPORTANT: All slots are 30 minutes. 1 hour = 2 slots. "
+                "Always quote and book in 30-min units. "
+                "Example: '1 hour at 9 AM' = slots "
+                "['9:00 AM - 9:30 AM', '9:30 AM - 10:00 AM'] = ₹300 total.\n"
                 "Premium paddle rental: ₹50/paddle/hour. Max 2 paddles per "
                 "booking.\n"
                 "Available paddle models: Perseus IV, Agassi, j2nf, Boomstick.\n"
@@ -99,11 +103,11 @@ def seed_knowledge():
                 "- Never auto-apply on the customer's behalf.\n"
                 "- Always convert promo codes to UPPERCASE before passing to "
                 "tools.\n"
-                "- VIBESLOT: active for selected customers only, valid for "
-                "bookings of at least 1 hour."
+                "- Pass the code to create_booking — the tool validates it "
+                "against the database automatically."
             )
         },
-        {
+                {
             "category": "booking_flow",
             "text": (
                 "BOOKING FLOW:\n"
@@ -120,8 +124,13 @@ def seed_knowledge():
                 "7. Payment must be Cash or UPI. If invalid, ask only for "
                 "payment mode.\n"
                 "8. Customer phone is from session — never ask for it, never "
-                "display it unless explicitly asked."
+                "display it unless explicitly asked.\n"
                 "9. Call check_available_slots(date) to see all free slots — no time_block needed.\n"
+                "SLOT MATH (non-negotiable): Every slot is 30 minutes. "
+                "1 hour = 2 slots. 1.5 hours = 3 slots. 2 hours = 4 slots. "
+                "Never pass a single slot string for a 1-hour booking. "
+                "Always expand the customer's duration into the correct number "
+                "of consecutive 30-min slot strings before calling create_booking."
             )
         },
         {
