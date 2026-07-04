@@ -301,7 +301,7 @@ def create_booking(
     ) -> str:
 
     """
-    Create a booking in the database and send email confirmation.
+    Create a booking in the database.
     booking_date MUST be a strict YYYY-MM-DD string from resolve_date()
     (e.g. "2025-08-17"). Never pass 'tomorrow', weekday names, or a date you
     have not already stated back to the customer for confirmation.
@@ -323,21 +323,23 @@ def create_booking(
             return f"❌ Booking refused: {booking_date} is in the past."
         
         canonical_phone = phone
-        provided_email = (email or "").strip()
-
-        customer_lookup = supabase.table("customers") \
-            .select("email, phone") \
-            .in_("phone", phone_variants(canonical_phone)) \
-            .limit(10) \
-            .execute()
-
-        saved_email = ""
-        if customer_lookup.data:
-            saved_email = (customer_lookup.data[0].get("email") or "").strip()
-
-        resolved_email = saved_email or provided_email
-        if not resolved_email:
-            return "❌ I couldn't find an email for this booking. Please provide the customer's email."
+        # --- Email feature disabled (commented out, not deleted) ---
+        # provided_email = (email or "").strip()
+        #
+        # customer_lookup = supabase.table("customers") \
+        #     .select("email, phone") \
+        #     .in_("phone", phone_variants(canonical_phone)) \
+        #     .limit(10) \
+        #     .execute()
+        #
+        # saved_email = ""
+        # if customer_lookup.data:
+        #     saved_email = (customer_lookup.data[0].get("email") or "").strip()
+        #
+        # resolved_email = saved_email or provided_email
+        # if not resolved_email:
+        #     return "❌ I couldn't find an email for this booking. Please provide the customer's email."
+        resolved_email = None
 
         # Check for conflicts first
         time_block = derive_time_block(slots[0])
@@ -430,7 +432,8 @@ def create_booking(
         supabase.table("bookings").insert({
             "name": name,
             "phone": canonical_phone,
-            "email": resolved_email,
+            # "email": resolved_email,  # email feature disabled
+            "email": None,
             "booking_date": booking_date,
             "time_block": time_block,
             "slots": slots,
@@ -440,20 +443,21 @@ def create_booking(
             "payment_mode": payment_mode
         }).execute()
 
-        # Send email confirmation
-        email_sent = send_email_confirmation(
-            to_email=resolved_email,
-            to_name=name,
-            booking_date=booking_date,
-            time_block=time_block,
-            selected_slots=", ".join(slots),
-            total_price=price_display,
-            phone=canonical_phone,
-            promo_code=promo_code or "",
-            paddle_rental=paddle_rental,
-            paddle_cost=paddle_cost
-        )
-        email_line = f"📧 Confirmation sent to {resolved_email}" if email_sent else "⚠️ Email confirmation could not be sent — please note your booking details above."
+        # --- Email confirmation disabled (commented out, not deleted) ---
+        # # Send email confirmation
+        # email_sent = send_email_confirmation(
+        #     to_email=resolved_email,
+        #     to_name=name,
+        #     booking_date=booking_date,
+        #     time_block=time_block,
+        #     selected_slots=", ".join(slots),
+        #     total_price=price_display,
+        #     phone=canonical_phone,
+        #     promo_code=promo_code or "",
+        #     paddle_rental=paddle_rental,
+        #     paddle_cost=paddle_cost
+        # )
+        # email_line = f"📧 Confirmation sent to {resolved_email}" if email_sent else "⚠️ Email confirmation could not be sent — please note your booking details above."
         paddle_line = f"\n🏓 Premium Paddles: {paddle_rental} (₹{paddle_cost})" if paddle_rental else ""
         payment_line = f"\n💳 Payment: {payment_mode} (pay after you play)" if payment_mode else ""
 
@@ -464,7 +468,6 @@ def create_booking(
             f"{paddle_line}"
             f"{payment_line}\n"
             f"💰 Price: {price_display}\n"
-            f"{email_line}"
         )
 
     except Exception as e:
@@ -917,46 +920,48 @@ def send_email_confirmation(
     """Send booking confirmation email via EmailJS REST API.
     Returns True if sent successfully, False otherwise."""
 
-    required_vars = ["EMAILJS_SERVICE_ID", "EMAILJS_TEMPLATE_ID", "EMAILJS_PUBLIC_KEY", "EMAILJS_PRIVATE_KEY"]
-    missing = [v for v in required_vars if not os.getenv(v)]
-    if missing:
-        print(f"[send_email_confirmation] Missing env vars: {', '.join(missing)}")
-        return False
-
-    paddle_line = f"{paddle_rental} paddle(s) — ₹{paddle_cost}" if paddle_rental else "None"
-    promo_display = promo_code.upper() if promo_code else "No promo applied"
-
-    try:
-        response = httpx.post(
-            "https://api.emailjs.com/api/v1.0/email/send",
-            json={
-                "service_id": os.getenv("EMAILJS_SERVICE_ID"),
-                "template_id": os.getenv("EMAILJS_TEMPLATE_ID"),
-                "user_id": os.getenv("EMAILJS_PUBLIC_KEY"),
-                "accessToken": os.getenv("EMAILJS_PRIVATE_KEY"),
-                "template_params": {
-                    "to_email": to_email,
-                    "to_name": to_name,
-                    "booking_date": booking_date,
-                    "time_block": time_block.capitalize(),
-                    "selected_slots": selected_slots,
-                    "total_price": str(total_price),
-                    "phone": phone,
-                    "promo_code": promo_display,
-                    "paddle_rental": paddle_line,
-                }
-            },
-            timeout=10
-        )
-        if response.status_code == 200:
-            print(f"[EmailJS] ✅ Sent to {to_email}")
-            return True
-        else:
-            print(f"[EmailJS] ❌ Failed — status {response.status_code}: {response.text}")
-            return False
-    except Exception as e:
-        print(f"[EmailJS] ❌ Exception: {e}")
-        return False
+    # --- Email feature disabled (commented out, not deleted) ---
+    return False
+    # required_vars = ["EMAILJS_SERVICE_ID", "EMAILJS_TEMPLATE_ID", "EMAILJS_PUBLIC_KEY", "EMAILJS_PRIVATE_KEY"]
+    # missing = [v for v in required_vars if not os.getenv(v)]
+    # if missing:
+    #     print(f"[send_email_confirmation] Missing env vars: {', '.join(missing)}")
+    #     return False
+    #
+    # paddle_line = f"{paddle_rental} paddle(s) — ₹{paddle_cost}" if paddle_rental else "None"
+    # promo_display = promo_code.upper() if promo_code else "No promo applied"
+    #
+    # try:
+    #     response = httpx.post(
+    #         "https://api.emailjs.com/api/v1.0/email/send",
+    #         json={
+    #             "service_id": os.getenv("EMAILJS_SERVICE_ID"),
+    #             "template_id": os.getenv("EMAILJS_TEMPLATE_ID"),
+    #             "user_id": os.getenv("EMAILJS_PUBLIC_KEY"),
+    #             "accessToken": os.getenv("EMAILJS_PRIVATE_KEY"),
+    #             "template_params": {
+    #                 "to_email": to_email,
+    #                 "to_name": to_name,
+    #                 "booking_date": booking_date,
+    #                 "time_block": time_block.capitalize(),
+    #                 "selected_slots": selected_slots,
+    #                 "total_price": str(total_price),
+    #                 "phone": phone,
+    #                 "promo_code": promo_display,
+    #                 "paddle_rental": paddle_line,
+    #             }
+    #         },
+    #         timeout=10
+    #     )
+    #     if response.status_code == 200:
+    #         print(f"[EmailJS] ✅ Sent to {to_email}")
+    #         return True
+    #     else:
+    #         print(f"[EmailJS] ❌ Failed — status {response.status_code}: {response.text}")
+    #         return False
+    # except Exception as e:
+    #     print(f"[EmailJS] ❌ Exception: {e}")
+    #     return False
 
 @tool
 def edit_booking_total(

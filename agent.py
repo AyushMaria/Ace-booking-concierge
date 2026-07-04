@@ -63,7 +63,7 @@ def get_system_prompt(phone: str = "", user_message: str = ""):
 
         You help customers:
         - Check available court slots
-        - Make bookings (collect name, phone, email, date, time slots)
+        - Make bookings (collect name, phone, date, time slots)
         - Cancel bookings
         - View their upcoming bookings
 
