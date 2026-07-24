@@ -51,16 +51,12 @@ def get_session(phone: str) -> list:
     # If session_date is missing or differs from today, annotate the rollover.
     # Skip the annotation only when stored_date == today (same-day continuation).
     if stored_date != today:
-        note = {
-            "role": "system",
-            "content": (
-                f"Date has changed: today is {today}. Treat any prior 'today' "
-                f"references in this conversation as belonging to {stored_date or 'an earlier date'}, "
-                f"not the current date. Use the system prompt's date as today."
-            ),
-        }
-        # Prepend so it's the first thing the model sees this turn
-        history = [note] + list(history)
+        note_content = (
+        f"Date has changed: today is {today}. Treat any prior 'today' "
+        f"references in this conversation as belonging to {stored_date or 'an earlier date'}, "
+        f"not the current date. Use the system prompt's date as today.")
+        history = [{"role": "system", "content": note_content}] + list(history)
+        print(f"[get_session] Rollover note injected for {phone}: {stored_date} -> {today}")
 
     return history
 

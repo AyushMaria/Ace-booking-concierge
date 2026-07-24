@@ -10,7 +10,7 @@ from tools import (
     sync_website_customers, initiate_message
 )
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 import pytz
 
 llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0)
@@ -36,6 +36,7 @@ def get_system_prompt(phone: str = "", user_message: str = ""):
     day_name = now.strftime("%A")
     current_hour = now.hour       
     current_time_str = now.strftime("%I:%M %p") 
+    example_date = (now + timedelta(days=10)).strftime("%d %b %Y")
 
     context_chunks = retrieve_knowledge(user_message, top_k=5)
     print(f"[RAG] Retrieved {len(context_chunks)} chunks for: {user_message!r}")
@@ -53,11 +54,12 @@ def get_system_prompt(phone: str = "", user_message: str = ""):
         - If the customer doesn't mention a date, assume TODAY (the date given
           above in this prompt). Never reuse a date from earlier conversation
           turns unless the customer explicitly references it.
-        - Before calling create_booking, ALWAYS echo the resolved date back to
-          the customer in DD Mon YYYY form (e.g. "17 Aug 2025") and get a yes.
-          Do not book on the same turn the date was first mentioned.
-        - Pass only the strict YYYY-MM-DD string to tools. Never pass words like
-          "tomorrow", weekday names, or ranges.
+        - Before calling create_booking, ALWAYS echo the resolved date back to the customer in 
+            DD Mon YYYY form (e.g. "{example_date}") and get a yes. Do not book on the same turn the 
+            date was first mentioned.
+        - You may pass natural phrases like "tomorrow", "next friday", or "17 aug" directly  
+          to tools — the backend resolves them deterministically. Do NOT attempt to calculate 
+          the date yourself; just forward the customer's own words for the date field.
         - Past dates are invalid. If the customer asks for a past date, say so
           and ask for a future one.
 
@@ -89,10 +91,20 @@ def get_admin_prompt():
     day_name = now.strftime("%A")
     current_hour = now.hour       
     current_time_str = now.strftime("%I:%M %p") 
+
+    DATE_RULES = """DATE RULES (non-negotiable):
+                - Never invent a date. If the phrase can't map to a single day, ask for clarification.
+                - Pass natural date phrases straight to tools; resolve_date() handles conversion.
+                - Past dates are invalid for create_booking/block_slots — say so and ask for a future date.
+                - Before delete_booking_by_id, block_slots, or edit_booking, echo the resolved date back 
+                to me and get explicit confirmation.
+                """
     
     return f"""
         You are Ace 🎾 in ADMIN MODE. You are speaking with the owner and your creator(Ayush Maria) of Vibe & Volley.
         Today's date is {today} ({day_name}). Current IST time is {current_time_str}.
+
+        {DATE_RULES}
 
         You have full database access and can:
         - View all bookings for any date

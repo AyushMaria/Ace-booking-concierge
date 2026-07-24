@@ -52,7 +52,7 @@ def resolve_date(text: str, today: Optional[date] = None) -> Optional[str]:
         except ValueError:
             return None
 
-    # DD Mon YYYY  (e.g. "5 Aug 2025")
+    # DD Mon YYYY (e.g. current year's format, not hardcoded)
     for fmt in ("%d %b %Y", "%d %B %Y"):
         try:
             return datetime.strptime(raw, fmt).date().isoformat()
@@ -70,12 +70,19 @@ def resolve_date(text: str, today: Optional[date] = None) -> Optional[str]:
     # 'next <weekday>' or bare weekday — both resolve to the next upcoming
     # occurrence of that weekday. delta==0 (today is that weekday) bumps to
     # next week so we never return "today" as the answer.
-    m = re.fullmatch(r"(?:next\s+)?([a-z]+)", raw)
-    if m and m.group(1) in WEEKDAY_MAP:
-        target = WEEKDAY_MAP[m.group(1)]
+    m = re.fullmatch(r"(this\s+|next\s+)?([a-z]+)", raw)
+    if m and m.group(2) in WEEKDAY_MAP:
+        modifier = (m.group(1) or "").strip()
+        target = WEEKDAY_MAP[m.group(2)]
         delta = (target - today.weekday()) % 7
-        if delta == 0:           # same weekday → next week
+        if modifier == "next":
+            delta = delta + 7 if delta == 0 else delta + 7 if delta < 7 else delta
+            # "next X" always means the occurrence in the following week
+            delta = ((target - today.weekday()) % 7) + 7
+        elif delta == 0 and modifier != "this":
+            # bare weekday name spoken on that same day defaults to next week
             delta = 7
+        # modifier == "this": delta stays as-is, even if delta == 0 (today)
         return (today + timedelta(days=delta)).isoformat()
 
     return None
@@ -222,9 +229,8 @@ def initiate_message(phone: str) -> str:
 def check_available_slots(booking_date: str) -> str:
     """
     Check which slots are available for a given date.
-    booking_date MUST be a strict YYYY-MM-DD string produced by resolve_date()
-    (e.g. "2025-08-17"). Do NOT pass 'tomorrow', 'next Monday', or a weekday
-    name — resolve them to ISO first. Past dates are rejected.
+    booking_date accepts a natural phrase ("tomorrow", "next monday") OR a strict 
+    YYYY-MM-DD string — resolve_date() handles conversion internally. Past dates are rejected.
     Returns all available slots across the full day (7 AM - 12 AM).
     """
     try:
@@ -234,9 +240,10 @@ def check_available_slots(booking_date: str) -> str:
 
         resolved = resolve_date(booking_date, now.date())
         if not resolved:
+            example = (now.date() + timedelta(days=14)).strftime("%d %b %Y")
             return (
                 f"❌ '{booking_date}' is not a recognised date. "
-                f"Ask the customer for an exact date (e.g. '17 Aug 2025')."
+                f"Ask the customer for an exact date (e.g. '{example}')."
             )
         booking_date = resolved
 
@@ -302,9 +309,9 @@ def create_booking(
 
     """
     Create a booking in the database.
-    booking_date MUST be a strict YYYY-MM-DD string from resolve_date()
-    (e.g. "2025-08-17"). Never pass 'tomorrow', weekday names, or a date you
-    have not already stated back to the customer for confirmation.
+    booking_date accepts a natural phrase ("tomorrow", "next friday") OR a strict 
+    YYYY-MM-DD string — resolve_date() handles conversion internally. Only pass a date 
+    you have already stated back to the customer for confirmation.
     slots: list of slot strings e.g. ["7:00 PM - 7:30 PM"]
     """
     try:
@@ -313,14 +320,20 @@ def create_booking(
 
         resolved = resolve_date(booking_date, today)
         if not resolved:
+            example = (today + timedelta(days=14)).strftime("%Y-%m-%d")
             return (
                 f"❌ Booking refused: '{booking_date}' is not a valid date. "
-                f"Resolve it to YYYY-MM-DD before calling create_booking."
+                f"Try a phrase like 'tomorrow' or an exact date like '{example}'."
             )
         booking_date = resolved
-
-        if date.fromisoformat(booking_date) < today:
+        resolved_date_obj = date.fromisoformat(booking_date)
+        if resolved_date_obj < today:
             return f"❌ Booking refused: {booking_date} is in the past."
+        if (resolved_date_obj - today).days > 60:
+            return (
+                f"⚠️ {booking_date} is more than 60 days out — please confirm this is correct "
+                f"with the customer before retrying with confirm_far_date=true."
+            )
         
         canonical_phone = phone
         # --- Email feature disabled (commented out, not deleted) ---
@@ -485,9 +498,10 @@ def cancel_booking(phone: str, booking_date: str) -> str:
 
         resolved = resolve_date(booking_date, today)
         if not resolved:
+            example = (today + timedelta(days=14)).strftime("%Y-%m-%d")
             return (
-                f"❌ Booking refused: '{booking_date}' is not a valid date. "
-                f"Resolve it to YYYY-MM-DD before calling create_booking."
+                f"❌ '{booking_date}' is not a recognised date. "
+                f"Try a phrase like 'tomorrow' or an exact date like '{example}'."
             )
         booking_date = resolved
 
@@ -550,7 +564,9 @@ def get_my_bookings(phone: str) -> str:
 def get_all_bookings(booking_date: str) -> str:
     """
     Admin: Get all bookings for a specific date.
-    booking_date: YYYY-MM-DD format
+    booking_date accepts natural phrases ("tomorrow", "next friday", "17 aug") OR a strict 
+    YYYY-MM-DD string — resolve_date() runs internally. Do not pre-compute the date yourself; 
+    pass what the customer said, verbatim, in lowercase where possible.
     """
     try:
         ist = pytz.timezone("Asia/Kolkata")
@@ -558,9 +574,10 @@ def get_all_bookings(booking_date: str) -> str:
 
         resolved = resolve_date(booking_date, today)
         if not resolved:
+            example = (today + timedelta(days=14)).strftime("%Y-%m-%d")
             return (
-                f"❌ Booking refused: '{booking_date}' is not a valid date. "
-                f"Resolve it to YYYY-MM-DD before calling create_booking."
+                f"❌ '{booking_date}' is not a recognised date. "
+                f"Try a phrase like 'tomorrow' or an exact date like '{example}'."
             )
         booking_date = resolved
         
@@ -612,7 +629,9 @@ def delete_booking_by_id(booking_id: int) -> str:
 def block_slots(booking_date: str, slots: List[str]) -> str:
     """
     Admin: Block specific slots on a date so customers can't book them.
-    booking_date: YYYY-MM-DD
+    booking_date accepts natural phrases ("tomorrow", "next friday", "17 aug") OR a strict 
+    YYYY-MM-DD string — resolve_date() runs internally. Do not pre-compute the date yourself; 
+    pass what the customer said, verbatim, in lowercase where possible.
     slots: list of slot strings to block
     """
     try:
@@ -621,9 +640,10 @@ def block_slots(booking_date: str, slots: List[str]) -> str:
 
         resolved = resolve_date(booking_date, today)
         if not resolved:
+            example = (today + timedelta(days=14)).strftime("%Y-%m-%d")
             return (
-                f"❌ Booking refused: '{booking_date}' is not a valid date. "
-                f"Resolve it to YYYY-MM-DD before calling create_booking."
+                f"❌ '{booking_date}' is not a recognised date. "
+                f"Try a phrase like 'tomorrow' or an exact date like '{example}'."
             )
         booking_date = resolved
 
@@ -824,9 +844,10 @@ def edit_booking(
         if new_date:
             resolved = resolve_date(new_date, today)
             if not resolved:
+                example = (today + timedelta(days=14)).strftime("%Y-%m-%d")
                 return (
-                    f"❌ Booking refused: '{new_date}' is not a valid date. "
-                    f"Resolve it to YYYY-MM-DD before calling create_booking."
+                    f"❌ '{booking_date}' is not a recognised date. "
+                    f"Try a phrase like 'tomorrow' or an exact date like '{example}'."
                 )
             new_date = resolved
 
