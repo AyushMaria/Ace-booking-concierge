@@ -1,6 +1,3 @@
-Here's the full README.md content:
-
-```markdown
 # Ace — WhatsApp Booking Concierge
 
 > An AI-powered WhatsApp booking agent for Vibe & Volley Pickleball Courts, built with LangGraph, Google Gemini, FastAPI, and Supabase.
@@ -161,4 +158,3 @@ This project is pre-configured for Railway:
 ## License
 
 This project is private. All rights reserved © Ayush Maria.
-```
