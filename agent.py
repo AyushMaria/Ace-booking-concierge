@@ -37,6 +37,7 @@ def get_system_prompt(phone: str = "", user_message: str = ""):
     current_hour = now.hour       
     current_time_str = now.strftime("%I:%M %p") 
     example_date = (now + timedelta(days=10)).strftime("%d %b %Y")
+    print(f"[get_system_prompt] computed today={today} for phone={phone}")
 
     context_chunks = retrieve_knowledge(user_message, top_k=5)
     print(f"[RAG] Retrieved {len(context_chunks)} chunks for: {user_message!r}")
@@ -162,7 +163,9 @@ def run_agent(phone: str, user_message: str, history: list) -> tuple[str, list]:
     """Run the customer agent."""
     agent = create_react_agent(model=llm, tools=customer_tools, prompt=get_system_prompt(phone, user_message))
     history.append({"role": "user", "content": user_message})
-    
+    print(f"[run_agent] history head for {phone}: {history[:2]}")
+    print(f"[run_agent] history tail for {phone}: {history[-3:]}")
+
     try:
         result = agent.invoke({"messages": history})
         messages = result["messages"]

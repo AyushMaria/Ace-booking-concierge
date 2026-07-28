@@ -237,8 +237,10 @@ def check_available_slots(booking_date: str) -> str:
         ist = pytz.timezone("Asia/Kolkata")
         now = datetime.now(ist)
         today = now.strftime("%Y-%m-%d")
-
+        print(f"[check_available_slots] raw_arg={booking_date!r} real_today={today}")
         resolved = resolve_date(booking_date, now.date())
+        print(f"[check_available_slots] resolved={resolved!r}")
+
         if not resolved:
             example = (now.date() + timedelta(days=14)).strftime("%d %b %Y")
             return (

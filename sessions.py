@@ -57,6 +57,8 @@ def get_session(phone: str) -> list:
         f"not the current date. Use the system prompt's date as today.")
         history = [{"role": "system", "content": note_content}] + list(history)
         print(f"[get_session] Rollover note injected for {phone}: {stored_date} -> {today}")
+    else:
+        print(f"[get_session] No rollover for {phone}: stored_date={stored_date} == today={today}")
 
     return history
 
