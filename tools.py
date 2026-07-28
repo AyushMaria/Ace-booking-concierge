@@ -848,14 +848,13 @@ def edit_booking(
             if not resolved:
                 example = (today + timedelta(days=14)).strftime("%Y-%m-%d")
                 return (
-                    f"❌ '{booking_date}' is not a recognised date. "
+                    f"❌ '{new_date}' is not a recognised date. "
                     f"Try a phrase like 'tomorrow' or an exact date like '{example}'."
                 )
             new_date = resolved
-
-        if date.fromisoformat(new_date) < today:
-            return f"❌ Booking refused: {new_date} is in the past."
-        
+            if date.fromisoformat(new_date) < today:
+                return f"❌ Booking refused: {new_date} is in the past."
+                
         existing = supabase.table("bookings").select("*").eq("id", booking_id).execute()
         if not existing.data:
             return f"No booking found with ID {booking_id}."
