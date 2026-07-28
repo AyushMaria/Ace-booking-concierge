@@ -1,86 +1,98 @@
-# 🎾 Ace — WhatsApp Booking Concierge
+Here's the full README.md content:
 
-> A WhatsApp-powered AI booking agent for **Vibe & Volley Pickleball Courts**, built with LangGraph, Google Gemini, FastAPI, and Supabase.
+```markdown
+# Ace — WhatsApp Booking Concierge
 
----
+> An AI-powered WhatsApp booking agent for Vibe & Volley Pickleball Courts, built with LangGraph, Google Gemini, FastAPI, and Supabase.
 
-## 📖 Overview
+## Overview
 
-**Ace** is an intelligent WhatsApp concierge bot that handles court bookings, cancellations, and customer queries through natural conversation. It supports two modes:
+Ace is a conversational WhatsApp bot that automates court bookings, cancellations, and customer support for a pickleball venue. It operates in two modes:
 
-- **Customer Mode** — Helps users check availability, book slots, cancel, and view their upcoming bookings.
-- **Admin Mode** — Gives the court owner full database access: view all bookings, manage promo codes, block slots, get revenue stats, and more.
+- **Customer Mode** — Check slot availability, create/cancel/edit bookings, view upcoming reservations, and get answers to FAQs via retrieval-augmented generation (RAG).
+- **Admin Mode** — Full operational control: view/search/delete/edit any booking, manage promo codes, block slots for maintenance, and pull revenue reports.
 
-The agent is powered by **Gemini 2.5 Flash** via LangChain and deployed as a **FastAPI** webhook, ready to integrate with the **Twilio WhatsApp Business API**.
+The agent runs on **Gemini 2.5 Flash** via LangChain/LangGraph's `create_react_agent`, is exposed as a **FastAPI** webhook, and integrates with the **Twilio WhatsApp Business API** for messaging. It is deployed on **Railway**.
 
----
-
-## ✨ Features
+## Features
 
 ### Customer-Facing
-- 📅 Check available court slots in real-time
-- 📝 Create bookings (collects name, phone, email, date, time)
-- ❌ Cancel bookings
-- 👀 View upcoming personal bookings
-- 🏷️ Apply promo codes (customer-provided only)
-- 🏓 Paddle rental upsell (₹50/paddle/hour)
-- 💳 Payment mode selection (Cash or UPI)
+- Real-time slot availability checks (7 AM–11 PM daily)
+- Booking creation with automatic phone/name resolution from prior bookings
+- Booking cancellation and editing (date, slots, or both)
+- View upcoming personal bookings
+- Promo code application (customer-provided codes only)
+- Paddle rental upsell (₹50/paddle/hour)
+- Payment mode selection (Cash or UPI, post-play)
+- RAG-backed answers to FAQs (pricing, court rules, location, timings)
+- Automated WhatsApp booking reminders via a scheduled cron job
 
 ### Admin-Only
-- 📊 View all bookings for any date
-- 🗑️ Delete bookings by ID
-- 🚫 Block slots (maintenance, private events)
-- 💰 Revenue reports with filters (date range, customer name/phone/email)
-- 🔍 Search bookings by phone or name
-- 🎟️ Create & edit promo codes
-- ✏️ Edit booking details or override totals
+- View all bookings for any date or date range
+- Search bookings by phone number or customer name
+- Delete bookings by ID
+- Block slots for maintenance or private events
+- Revenue reports with filters (date range, customer)
+- Create and edit promo codes
+- Edit booking details (date, slots) or override totals
+- Sync customer profiles from the venue's website
 
----
+## Reliability Fixes (Date & Session Handling)
 
-## 🏗️ Tech Stack
+Ace has been hardened against date hallucination — a failure mode where the LLM computes "today" incorrectly across long-running or multi-day WhatsApp conversations. Key safeguards now in place:
+
+- **Deterministic date resolution** — `resolve_date()` in `tools.py` parses natural phrases ("today", "tomorrow", "next friday", DD Mon YYYY) into strict ISO dates server-side, rather than relying on the LLM's own date arithmetic.
+- **Session rollover deduplication** — `sessions.py` strips any stale "date has changed" system notes before injecting a fresh one, preventing conflicting anchors from stacking up in long conversations.
+- **History capping** — conversation history per user is capped to a fixed number of recent messages to reduce stale-context bleed and token overhead.
+- **Dynamic prompt examples** — example dates shown to the LLM in prompts and tool docstrings are computed relative to the current date rather than hardcoded, preventing year/date drift.
+- **Diagnostic logging** — key checkpoints (`get_session`, `get_system_prompt`, `check_available_slots`) log the raw and resolved date values for traceability in production logs (Railway).
+
+## Tech Stack
 
 | Layer | Technology |
 |---|---|
 | AI Agent | LangGraph + LangChain |
-| LLM | Google Gemini 2.5 Flash |
+| LLM | Google Gemini 2.5 Flash (`langchain-google-genai`) |
 | Backend | FastAPI + Uvicorn |
-| WhatsApp | Twilio API |
-| Database | Supabase (PostgreSQL) |
-| Session State | In-memory (per phone number) |
-| Deployment | Railway (Procfile + runtime.txt) |
-| Timezone | IST (Asia/Kolkata) |
+| Messaging | Twilio WhatsApp Business API |
+| Database | Supabase (PostgreSQL + `pgvector`) |
+| Knowledge Retrieval | RAG over `pgvector`-embedded FAQ/policy chunks (`rag.py`) |
+| Session State | Persisted per-phone-number history (Supabase-backed) |
+| Reminders | Scheduled cron endpoint for booking reminders (`reminders.py`, `reminder_script.py`) |
+| Deployment | Railway (`Procfile` + `runtime.txt`) |
+| Timezone | IST (Asia/Kolkata), via `pytz` |
 
----
-
-## 📁 Project Structure
+## Project Structure
 
 ```
-whatsapp-agent/
-├── main.py           # FastAPI app & Twilio webhook handler
-├── agent.py          # LangGraph agent setup, system prompts, run functions
-├── tools.py          # All LangChain tools (booking, slots, promo, admin)
-├── sessions.py       # Per-user session/history management
-├── requirements.txt  # Python dependencies
-├── Procfile          # Railway deployment process
-└── runtime.txt       # Python version for Railway
+Ace-booking-concierge/
+├── main.py              # FastAPI app, Twilio webhook, cron endpoints, phone normalization at entry
+├── agent.py             # LangGraph agent setup, system prompts (customer + admin), run functions
+├── tools.py             # LangChain tools: booking CRUD, slot checks, promo codes, date resolution
+├── rag.py               # RAG knowledge base: FAQ/policy chunks, embedding + retrieval logic
+├── sessions.py          # Per-user session/history management, date-rollover handling
+├── reminders.py         # WhatsApp booking reminder logic (approved template messages)
+├── reminder_script.py   # Standalone/cron-triggered reminder dispatch script
+├── requirements.txt     # Python dependencies
+├── Procfile             # Railway process definition
+├── runtime.txt          # Python version pin for Railway
+└── .env_template        # Required environment variable names (copy to .env)
 ```
 
----
-
-## 🚀 Getting Started
+## Getting Started
 
 ### Prerequisites
 
 - Python 3.11+
 - A [Twilio](https://www.twilio.com/) account with WhatsApp enabled
-- A [Supabase](https://supabase.com/) project with booking tables set up
+- A [Supabase](https://supabase.com/) project with booking, session, and `pgvector`-enabled knowledge tables
 - A [Google AI](https://aistudio.google.com/) API key (Gemini)
 
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/AyushMaria/whatsapp-agent.git
-cd whatsapp-agent
+git clone https://github.com/AyushMaria/Ace-booking-concierge.git
+cd Ace-booking-concierge
 ```
 
 ### 2. Install Dependencies
@@ -91,9 +103,9 @@ pip install -r requirements.txt
 
 ### 3. Configure Environment Variables
 
-Create a `.env` file in the root directory:
+Copy `.env_template` to `.env` and fill in the required values:
 
-```env
+```
 GOOGLE_API_KEY=your_google_gemini_api_key
 SUPABASE_URL=your_supabase_project_url
 SUPABASE_KEY=your_supabase_service_role_key
@@ -107,36 +119,34 @@ ADMIN_PHONE=whatsapp:+91XXXXXXXXXX
 uvicorn main:app --reload
 ```
 
-Expose your local server with [ngrok](https://ngrok.com/) and set the webhook URL in your Twilio console:
+Expose your local server with [ngrok](https://ngrok.com/) and set the resulting URL as the webhook in your Twilio console:
 
 ```
-https://<your-ngrok-url>/webhook
+https://<your-ngrok-domain>/webhook
 ```
 
----
+## Deployment (Railway)
 
-## ☁️ Deployment (Railway)
+This project is pre-configured for Railway:
 
-This project is pre-configured for Railway deployment.
+1. Push changes to GitHub (`main` branch).
+2. Create a Railway project and connect this repository.
+3. Add all required environment variables in the Railway dashboard.
+4. Railway uses `Procfile` and `runtime.txt` to start the server automatically on every push.
+5. Configure a Railway cron trigger (or external scheduler) to hit the reminders endpoint for booking notifications.
 
-1. Push to GitHub
-2. Create a new Railway project and connect this repo
-3. Add all environment variables in the Railway dashboard
-4. Railway will use the `Procfile` to start the server automatically
-
----
-
-## 🤖 How the Agent Works
+## How the Agent Works
 
 1. A WhatsApp message arrives at the `/webhook` endpoint via Twilio.
-2. `sessions.py` retrieves the conversation history for the sender's phone number.
-3. If the sender matches `ADMIN_PHONE`, the **admin agent** is invoked; otherwise the **customer agent** runs.
-4. The LangGraph `create_react_agent` reasons over the conversation and calls the appropriate tools from `tools.py`.
-5. The response is sent back to the user via Twilio's WhatsApp reply.
+2. `main.py` normalizes the sender's phone number at the entry point before any downstream processing.
+3. `sessions.py` retrieves the conversation history for that phone number, deduplicating and injecting a date-rollover note if the session is stale.
+4. If the sender matches `ADMIN_PHONE`, the **admin agent** is invoked; otherwise the **customer agent** runs.
+5. `rag.py` retrieves relevant knowledge chunks (FAQs, policies) to supplement the system prompt for that turn.
+6. The LangGraph `create_react_agent` reasons over the conversation and calls tools from `tools.py` as needed (slot checks, booking CRUD, promo codes).
+7. The response is sent back to the user via Twilio's WhatsApp reply.
+8. A separate scheduled job (`reminders.py` / `reminder_script.py`) sends approved WhatsApp template reminders for upcoming bookings.
 
----
-
-## 🏟️ Court Info
+## Court Info
 
 | Detail | Info |
 |---|---|
@@ -148,8 +158,7 @@ This project is pre-configured for Railway deployment.
 | Payment | Cash or UPI (post-play) |
 | Contact | +91 9156156570 |
 
----
-
-## 📄 License
+## License
 
 This project is private. All rights reserved © Ayush Maria.
+```
