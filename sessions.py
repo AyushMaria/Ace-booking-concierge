@@ -16,11 +16,11 @@ def _today_ist_iso() -> str:
 
 def get_session(phone: str) -> list:
     """Return conversation history, annotating any cross-day rollover.
-
-    If the stored session_date differs from today's IST date, a system note is
-    prepended to the returned history so the model treats prior turns as
-    prior-day context — not as a source for "today". The history array itself
-    is never trimmed (preserves the personal touch across days).
+    If the stored session_date differs from today's IST date, a system
+    note is prepended to the returned history so the model treats prior
+    turns as prior-day context — not as a source for "today". History is
+    capped at MAX_HISTORY_MESSAGES to avoid stale context bloat and
+    conflicting rollover notes are deduplicated before a new one is added.
     """
     today = _today_ist_iso()
 
@@ -48,18 +48,26 @@ def get_session(phone: str) -> list:
     history = row.get("history") or []
     stored_date = row.get("session_date")
 
+    MAX_HISTORY_MESSAGES = 20
+    if len(history) > MAX_HISTORY_MESSAGES:
+        history = history[-MAX_HISTORY_MESSAGES:]
+        print(f"[get_session] Trimmed history for {phone} to last {MAX_HISTORY_MESSAGES} messages")
+
     # If session_date is missing or differs from today, annotate the rollover.
     # Skip the annotation only when stored_date == today (same-day continuation).
     if stored_date != today:
+        history = [
+            msg for msg in history
+            if not (msg.get("role") == "system" and msg.get("content", "").startswith("Date has changed:"))
+        ]
         note_content = (
-        f"Date has changed: today is {today}. Treat any prior 'today' "
-        f"references in this conversation as belonging to {stored_date or 'an earlier date'}, "
-        f"not the current date. Use the system prompt's date as today.")
-        history = [{"role": "system", "content": note_content}] + list(history)
-        print(f"[get_session] Rollover note injected for {phone}: {stored_date} -> {today}")
+            f"Date has changed: today is {today}. Treat any prior 'today' "
+            f"references in this conversation as belonging to {stored_date or 'an earlier date'}, "
+            f"not the current date. Use the system prompt's date as today.")
+        history = [{"role": "system", "content": note_content}] + history
+        print(f"[get_session] Rollover note replaced for {phone}: {stored_date} -> {today}")
     else:
         print(f"[get_session] No rollover for {phone}: stored_date={stored_date} == today={today}")
-
     return history
 
 
