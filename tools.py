@@ -138,6 +138,185 @@ TIME_SLOTS = [
             "11:00 PM - 11:30 PM", "11:30 PM - 12:00 AM"
 ]
 
+SLOT_MINUTES = 30
+DAY_OPEN_MINUTES = 7 * 60       # 7:00 AM
+DAY_CLOSE_MINUTES = 24 * 60     # 12:00 AM — the end of the booking day, not its start
+
+_SLOT_INDEX = {s: i for i, s in enumerate(TIME_SLOTS)}
+_RANGE_SEPARATOR = re.compile(r"\s*(?:-|–|—|\bto\b|\btill\b|\buntil\b)\s*", re.I)
+_CLOCK_PATTERN = re.compile(r"^(\d{1,2})[:.]?(\d{2})?\s*(a\.?m\.?|p\.?m\.?)?$", re.I)
+
+
+def _format_clock(minutes: int) -> str:
+    """Render minutes-since-midnight the way TIME_SLOTS spells it ('7:30 PM')."""
+    minutes %= 1440
+    hour, minute = divmod(minutes, 60)
+    suffix = "AM" if hour < 12 else "PM"
+    return f"{hour % 12 or 12}:{minute:02d} {suffix}"
+
+
+def _parse_clock(text: str):
+    """
+    Parse one clock reading into (minutes_since_midnight, meridiem_is_explicit).
+    Returns (None, False) when the text isn't a clock at all.
+    A bare 1-12 hour is returned unresolved — the caller decides AM or PM from
+    the other end of the range.
+    """
+    raw = re.sub(r"\s+", " ", (text or "").strip().lower())
+    m = _CLOCK_PATTERN.match(raw)
+    if not m:
+        return None, False
+
+    hour = int(m.group(1))
+    minute = int(m.group(2) or 0)
+    meridiem = (m.group(3) or "").replace(".", "")
+
+    if minute > 59:
+        return None, False
+
+    if meridiem:
+        if not 1 <= hour <= 12:
+            return None, False
+        return (hour % 12 + (12 if meridiem == "pm" else 0)) * 60 + minute, True
+
+    if hour == 24 and minute == 0:
+        return DAY_CLOSE_MINUTES, True
+    if hour > 24:
+        return None, False
+    if hour > 12:
+        return hour * 60 + minute, True     # 24-hour clock, nothing to guess
+
+    return hour * 60 + minute, False        # bare 1-12, still ambiguous
+
+
+def _readings(minutes: int, as_end: bool = False) -> List[int]:
+    """Both readings (AM then PM) of an ambiguous bare clock value."""
+    base = minutes % 720                    # 12:xx folds onto 0:xx
+    options = [base, base + 720]
+    if as_end and base == 0:
+        options.append(DAY_CLOSE_MINUTES)   # a trailing '12' means midnight close
+    return options
+
+
+def _slots_between(start: int, end: int, raw: str):
+    """Walk a resolved start/end in 30-minute steps. Returns (slots, error)."""
+    if end <= start:
+        return [], f"'{raw}' ends before it starts."
+    if start % SLOT_MINUTES or end % SLOT_MINUTES:
+        return [], f"'{raw}' doesn't line up with our 30-minute slots."
+    if start < DAY_OPEN_MINUTES or end > DAY_CLOSE_MINUTES:
+        return [], f"'{raw}' falls outside our 7:00 AM - 12:00 AM opening hours."
+
+    expanded = []
+    for minute_mark in range(start, end, SLOT_MINUTES):
+        label = f"{_format_clock(minute_mark)} - {_format_clock(minute_mark + SLOT_MINUTES)}"
+        if label not in _SLOT_INDEX:
+            return [], f"'{raw}' covers {label}, which isn't a bookable slot."
+        expanded.append(label)
+    return expanded, None
+
+
+def expand_slot_range(text) -> tuple:
+    """
+    Turn one slot phrase into the canonical 30-minute slots it actually occupies.
+    "6:00 PM - 7:00 PM" -> ["6:00 PM - 6:30 PM", "6:30 PM - 7:00 PM"].
+    Returns (slots, error_message).
+    """
+    raw = re.sub(r"\s+", " ", str(text or "")).strip()
+    if not raw:
+        return [], "An empty slot value came through."
+    if raw in _SLOT_INDEX:
+        return [raw], None
+
+    parts = [p for p in _RANGE_SEPARATOR.split(raw) if p]
+
+    # A lone time ("6:30 PM") means the single slot starting there.
+    if len(parts) == 1:
+        start, explicit = _parse_clock(parts[0])
+        if start is None:
+            return [], f"'{raw}' isn't a time I can read."
+        if not explicit:
+            return [], f"'{raw}' is missing AM/PM."
+        return _slots_between(start, start + SLOT_MINUTES, raw)
+
+    if len(parts) != 2:
+        return [], f"'{raw}' isn't a single time range."
+
+    start, start_explicit = _parse_clock(parts[0])
+    end, end_explicit = _parse_clock(parts[1])
+    if start is None or end is None:
+        return [], f"'{raw}' isn't a time range I can read."
+
+    if end_explicit and end == 0:
+        end = DAY_CLOSE_MINUTES             # "11:00 PM - 12:00 AM" closes the day
+
+    if start_explicit and end_explicit:
+        return _slots_between(start, end, raw)
+
+    # One side carries the meridiem — the other inherits whichever reading keeps
+    # the range moving forwards ("6-7 pm" is 6 PM, "11-1 pm" is 11 AM).
+    if start_explicit:
+        forward = [e for e in _readings(end, as_end=True) if e > start]
+        if not forward:
+            return [], f"'{raw}' ends before it starts."
+        return _slots_between(start, min(forward), raw)
+
+    if end_explicit:
+        backward = [s for s in _readings(start) if s < end]
+        if not backward:
+            return [], f"'{raw}' ends before it starts."
+        return _slots_between(max(backward), end, raw)
+
+    # Neither side said AM or PM. Accept it only if exactly one reading fits
+    # inside opening hours — otherwise it's a genuine coin flip, so ask.
+    candidates = []
+    for s in _readings(start):
+        for e in _readings(end, as_end=True):
+            if s < e and DAY_OPEN_MINUTES <= s and e <= DAY_CLOSE_MINUTES:
+                candidates.append((e - s, s, e))
+    if not candidates:
+        return [], f"'{raw}' falls outside our 7:00 AM - 12:00 AM opening hours."
+    shortest = min(c[0] for c in candidates)
+    best = [c for c in candidates if c[0] == shortest]
+    if len(best) != 1:
+        return [], f"'{raw}' could be AM or PM — please say which."
+    _, s, e = best[0]
+    return _slots_between(s, e, raw)
+
+
+def normalize_slots(slots) -> tuple:
+    """
+    Expand any slot phrasing into canonical 30-minute TIME_SLOTS entries,
+    deduplicated and in chronological order.
+
+    Everything downstream — pricing, conflict checks, paddle hours, availability
+    — counts slots, so an hour handed over as one string ("6:00 PM - 7:00 PM")
+    would otherwise be charged and blocked as a single half-hour.
+    Returns (canonical_slots, error_message).
+    """
+    if isinstance(slots, str):
+        slots = [slots]
+    if not slots:
+        return [], "❌ No slots were given. Please tell me which times to book."
+
+    expanded = []
+    for entry in slots:
+        found, error = expand_slot_range(entry)
+        if error:
+            return [], (
+                f"❌ {error} Slots run in 30-minute steps between 7:00 AM and "
+                f"12:00 AM — e.g. '6:00 PM - 7:00 PM' for an hour."
+            )
+        expanded.extend(found)
+
+    ordered, seen = [], set()
+    for slot in sorted(expanded, key=_SLOT_INDEX.get):
+        if slot not in seen:
+            seen.add(slot)
+            ordered.append(slot)
+    return ordered, None
+
+
 def parse_slots(slots_field) -> list:
     if isinstance(slots_field, list):
         return slots_field
@@ -314,7 +493,10 @@ def create_booking(
     booking_date accepts a natural phrase ("tomorrow", "next friday") OR a strict 
     YYYY-MM-DD string — resolve_date() handles conversion internally. Only pass a date 
     you have already stated back to the customer for confirmation.
-    slots: list of slot strings e.g. ["7:00 PM - 7:30 PM"]
+    slots: list of slot strings e.g. ["7:00 PM - 7:30 PM"]. Every slot is 30 minutes,
+    but you may also pass a longer range verbatim ("6:00 PM - 7:00 PM") — the tool
+    splits it into the 30-min slots it covers before pricing it, so a 1-hour booking
+    is always charged as two slots. Never do the splitting maths yourself.
     """
     try:
         ist = pytz.timezone("Asia/Kolkata")
@@ -355,6 +537,12 @@ def create_booking(
         # if not resolved_email:
         #     return "❌ I couldn't find an email for this booking. Please provide the customer's email."
         resolved_email = None
+
+        # Split whatever arrived into canonical 30-min slots before anything
+        # counts them — an hour must be two slots, not one.
+        slots, slot_error = normalize_slots(slots)
+        if slot_error:
+            return slot_error
 
         # Check for conflicts first
         time_block = derive_time_block(slots[0])
@@ -634,7 +822,8 @@ def block_slots(booking_date: str, slots: List[str]) -> str:
     booking_date accepts natural phrases ("tomorrow", "next friday", "17 aug") OR a strict 
     YYYY-MM-DD string — resolve_date() runs internally. Do not pre-compute the date yourself; 
     pass what the customer said, verbatim, in lowercase where possible.
-    slots: list of slot strings to block
+    slots: list of slot strings to block. Longer ranges ("6:00 PM - 7:00 PM") are
+    split into the 30-min slots they cover automatically.
     """
     try:
         ist = pytz.timezone("Asia/Kolkata")
@@ -651,7 +840,11 @@ def block_slots(booking_date: str, slots: List[str]) -> str:
 
         if date.fromisoformat(booking_date) < today:
             return f"❌ Booking refused: {booking_date} is in the past."
-        
+
+        slots, slot_error = normalize_slots(slots)
+        if slot_error:
+            return slot_error
+
         time_block = derive_time_block(slots[0])
         supabase.table("bookings").insert({
             "name": "BLOCKED",
@@ -837,6 +1030,8 @@ def edit_booking(
     """
     Admin: Edit an existing booking by ID. Only provided fields will be updated.
     Automatically recalculates total price if slots or promo code are changed.
+    new_slots: replacement slot strings; ranges longer than 30 minutes are split
+    into the 30-min slots they cover before the price is recalculated
     new_promo_code: apply or change the promo code on this booking (pass empty string "" to remove it)
     """
     try:
@@ -868,10 +1063,23 @@ def edit_booking(
         if new_phone: updates["phone"] = normalize_phone(new_phone)
         if new_email: updates["email"] = new_email
 
-        # Use new_slots if provided, else fall back to existing slots
-        active_slots = new_slots if new_slots else parse_slots(b["slots"])
+        # Use new_slots if provided, else fall back to existing slots. Either way
+        # they go through normalize_slots, so a stored hour-long string gets
+        # rewritten as the two slots it really is before the price is recomputed.
+        stored_slots = parse_slots(b["slots"])
+        active_slots, slot_error = normalize_slots(new_slots if new_slots else stored_slots)
+        if slot_error:
+            return slot_error
+
+        slots_warning = ""
         if new_slots:
-            updates["slots"] = new_slots
+            updates["slots"] = active_slots
+        elif active_slots != stored_slots:
+            updates["slots"] = active_slots
+            slots_warning = (
+                f"\n⚠️ Stored slots were re-split into 30-min units: "
+                f"{', '.join(stored_slots)} → {', '.join(active_slots)}."
+            )
 
         # Determine which promo to apply
         # new_promo_code="" means remove promo; None means don't touch it
@@ -880,8 +1088,9 @@ def edit_booking(
         else:
             promo_to_apply = b.get("promo_code")  # keep existing
 
-        # Recalculate price if slots or promo changed
-        if new_slots or new_promo_code is not None:
+        # Recalculate price if slots or promo changed — a re-split counts as a
+        # slot change, since the old total was priced off the wrong slot count.
+        if new_slots or new_promo_code is not None or slots_warning:
             base_price = sum(get_slot_price(s) for s in active_slots)
             paddle_rental = b.get("paddle_rental", 0) or 0
             paddle_cost = round(paddle_rental * 50 * len(active_slots) * 0.5)
@@ -928,7 +1137,7 @@ def edit_booking(
         price_info = f"\n💰 Price: ₹{old_price} → ₹{new_price}" if "total_price" in updates else ""
         promo_info = f"\n🎟️ Promo: {updates['promo_code'] or 'None'}" if "promo_code" in updates else ""
 
-        return f"✅ Booking ID {booking_id} updated.{price_info}{promo_info}{promo_warning}"
+        return f"✅ Booking ID {booking_id} updated.{price_info}{promo_info}{slots_warning}{promo_warning}"
 
     except Exception as e:
         return f"Error editing booking: {str(e)}"

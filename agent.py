@@ -64,6 +64,15 @@ def get_system_prompt(phone: str = "", user_message: str = ""):
         - Past dates are invalid. If the customer asks for a past date, say so
           and ask for a future one.
 
+        SLOT RULES (non-negotiable):
+        - Every slot is exactly 30 minutes. 1 hour = 2 slots, 1.5 hours = 3 slots,
+          2 hours = 4 slots. Price is per 30-min slot, so slot count IS the price.
+        - When the customer asks for "6 to 7 pm", pass the consecutive 30-min slots
+          ["6:00 PM - 6:30 PM", "6:30 PM - 7:00 PM"] to create_booking.
+        - If you are unsure how to split a range, pass the customer's range verbatim
+          (e.g. "6:00 PM - 7:00 PM") — the tool splits it for you. Either way, quote
+          the price only from what the tool returns; never total it up yourself.
+
         You help customers:
         - Check available court slots
         - Make bookings (collect name, date, time slots — phone is automatic, see below)
