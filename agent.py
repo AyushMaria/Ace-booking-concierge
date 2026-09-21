@@ -6,7 +6,7 @@ from tools import (
     get_all_bookings, delete_booking_by_id, block_slots, get_booking_stats,
     get_bookings_by_phone, get_bookings_by_name, create_promo_code,
     edit_booking, edit_booking_total, get_revenue, edit_promo_code,
-    add_paddle_rental, get_customer_by_phone, create_customer_profile,
+    get_customer_by_phone, create_customer_profile,
     sync_website_customers, initiate_message
 )
 import os
@@ -17,7 +17,7 @@ llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0)
 
 customer_tools = [
     check_available_slots, create_booking, cancel_booking, 
-    get_my_bookings, add_paddle_rental, get_customer_by_phone, 
+    get_my_bookings, get_customer_by_phone,
     create_customer_profile
 ]
 
@@ -43,7 +43,7 @@ def get_system_prompt(phone: str = "", user_message: str = ""):
     print(f"[RAG] Retrieved {len(context_chunks)} chunks for: {user_message!r}")
     context_block = "\n\n".join(context_chunks)
 
-    # The retrieved chunks carry the pricing, hours, paddle, payment and promo
+    # The retrieved chunks carry the pricing, hours, payment and promo
     # rules. Without them the model quotes list price for off-peak slots, so the
     # block below must actually reach the prompt.
     if context_block:
@@ -115,10 +115,10 @@ def get_system_prompt(phone: str = "", user_message: str = ""):
         to save their name against {phone} so future bookings skip this step. Leave the
         email blank - never invent one.
 
-        BOOKING IDS (needed by the paddle and cancel flows):
+        BOOKING IDS (needed by the cancel flow):
         - create_booking returns a Booking ID. Remember it for the rest of the chat.
-        - add_paddle_rental needs that numeric ID. If you do not have it, call
-          get_my_bookings first and read the ID from the list. Never invent an ID.
+          If you do not have one, call get_my_bookings and read the ID from the list.
+          Never invent an ID.
         - If the customer has more than one booking on a date, pass the slots of the
           one they mean to cancel_booking, or it will ask you which.
         """

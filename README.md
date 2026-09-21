@@ -19,7 +19,6 @@ The agent runs on **Gemini 2.5 Flash** via LangChain/LangGraph's `create_react_a
 - Booking cancellation and editing (date, slots, or both)
 - View upcoming personal bookings
 - Promo code application (customer-provided codes only)
-- Paddle rental upsell (₹50/paddle/hour)
 - Payment mode selection (Cash or UPI, post-play)
 - RAG-backed answers to FAQs (pricing, court rules, location, timings)
 - Automated WhatsApp booking reminders via a scheduled cron job
@@ -149,9 +148,9 @@ This project is pre-configured for Railway:
 |---|---|
 | Venue | Vibe & Volley Pickleball Courts |
 | Location | By Tiny Tots Kindergarten, Chh. Sambhajinagar |
-| Timings | Mon–Sun, 7–11 AM & 4–11 PM |
-| Slot Price | ₹250 / 30 min (₹500/hr) |
-| Paddle Rental | ₹50 / paddle / hour |
+| Timings | Mon–Sun, 7:00 AM – 12:00 AM (continuous) |
+| Slot Price | ₹250 / 30 min (₹500/hr) peak · ₹150 / 30 min (₹300/hr) off-peak, 9 AM–5 PM |
+| Equipment | Included with the court |
 | Payment | Cash or UPI (post-play) |
 | Contact | +91 9156156570 |
 

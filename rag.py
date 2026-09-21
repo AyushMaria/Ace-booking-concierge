@@ -30,7 +30,12 @@ def chunk_text(text: str, max_chars: int = 500) -> list[str]:
     return chunks
 
 
-def seed_knowledge():
+def seed_knowledge(replace: bool = True):
+    """Rewrite the knowledge base from the chunks below.
+
+    The chunks live in Supabase as embeddings, so editing this file alone
+    changes nothing at runtime — run it (`python rag.py`) after every edit.
+    """
     knowledge = [
         {
             "category": "court_info",
@@ -54,9 +59,8 @@ def seed_knowledge():
                 "Always quote and book in 30-min units. "
                 "Example: '1 hour at 9 AM' = slots "
                 "['9:00 AM - 9:30 AM', '9:30 AM - 10:00 AM'] = ₹300 total.\n"
-                "Premium paddle rental: ₹50/paddle/hour. Max 2 paddles per "
-                "booking.\n"
-                "Available paddle models: Perseus IV, Agassi, j2nf, Boomstick.\n"
+                "Equipment (paddles and balls) is included in the court price. "
+                "There is no rental charge and nothing to add on.\n"
                 "Payment: Cash or UPI, collected after you play. No advance needed."
             )
         },
@@ -117,8 +121,8 @@ def seed_knowledge():
                 "3. New customer: ask Name | Payment mode.\n"
                 "4. After create_booking succeeds: NEVER re-check availability. "
                 "Treat as confirmed.\n"
-                "5. After success, send two-part reply separated by [SPLIT]: "
-                "confirmation + paddle upsell.\n"
+                "5. After create_booking succeeds, send the confirmation and "
+                "nothing else. Never upsell.\n"
                 "6. If customer replies 'Ok', 'Fine', 'Sure', 'Alright' — "
                 "treat as acceptance, do not re-ask.\n"
                 "7. Payment must be Cash or UPI. If invalid, ask only for "
@@ -134,18 +138,17 @@ def seed_knowledge():
             )
         },
         {
-            "category": "paddles",
+            "category": "equipment",
             "text": (
-                "PADDLE RENTAL:\n"
-                "- Premium paddles: ₹50/paddle/hour.\n"
-                "- Max 2 paddles per booking. 4 total available across all "
-                "bookings.\n"
-                "- Models: Perseus IV, Agassi, j2nf, Boomstick.\n"
-                "- After booking confirmation, mention paddles in a [SPLIT] "
-                "message.\n"
-                "- Do NOT wait for a reply to the paddle message.\n"
-                "- If customer asks to add paddles, call add_paddle_rental.\n"
-                "- Never follow up asking if they want paddles again."
+                "EQUIPMENT:\n"
+                "- Paddles and balls are provided with every booking, included "
+                "in the court price.\n"
+                "- Premium paddle rental has been discontinued. Do not offer it, "
+                "price it, or mention ₹50/paddle/hour.\n"
+                "- If a customer asks to rent a paddle, say rentals have ended "
+                "but equipment comes with the court at no extra charge.\n"
+                "- Customers are welcome to bring their own paddles.\n"
+                "- Never upsell anything after a confirmation."
             )
         },
         {
@@ -158,24 +161,34 @@ def seed_knowledge():
                 "Q: Can I book for someone else? A: Yes, provide their name, "
                 "phone, email.\n"
                 "Q: What if I'm late? A: Slot time is fixed, no extensions.\n"
-                "Q: Do you provide free paddles? A: Yes, we provide both free and paid paddles as per customer requirement.\n"
+                "Q: Do you rent paddles? A: No. Paddle rental has ended, but "
+                "paddles and balls come with the court at no extra charge.\n"
                 "Q: Is there a cancellation fee? A: No cancellation fee "
                 "currently."
             )
         }
     ]
 
+    # Embed everything BEFORE touching the table. The old version inserted as
+    # it went, so an embedding call failing halfway through left the knowledge
+    # base in a partial state — and because it never deleted, a second run left
+    # two copies of every chunk instead, which crowded real matches out of the
+    # top-k. Build the full set first, then swap it in.
+    prepared = []
     for item in knowledge:
-        chunks = chunk_text(item["text"])
-        for chunk in chunks:
-            embedding = get_embedding(chunk)
-            supabase.table("knowledge_chunks").insert({
+        for chunk in chunk_text(item["text"]):
+            prepared.append({
                 "category": item["category"],
                 "content": chunk,
-                "embedding": embedding
-            }).execute()
+                "embedding": get_embedding(chunk),
+            })
 
-    print(f"[RAG] Seeded {len(knowledge)} knowledge items.")
+    if replace:
+        supabase.table("knowledge_chunks").delete().gte("id", 0).execute()
+
+    supabase.table("knowledge_chunks").insert(prepared).execute()
+
+    print(f"[RAG] Seeded {len(prepared)} chunks from {len(knowledge)} knowledge items.")
 
 
 def retrieve_knowledge(query: str, top_k: int = 5, category: str = None) -> list[str]:
@@ -196,3 +209,7 @@ def retrieve_knowledge(query: str, top_k: int = 5, category: str = None) -> list
     except Exception as e:
         print(f"[RAG] retrieval failed ({type(e).__name__}: {e}) - continuing without context")
         return []
+
+
+if __name__ == "__main__":
+    seed_knowledge()

@@ -289,8 +289,8 @@ def normalize_slots(slots) -> tuple:
     Expand any slot phrasing into canonical 30-minute TIME_SLOTS entries,
     deduplicated and in chronological order.
 
-    Everything downstream — pricing, conflict checks, paddle hours, availability
-    — counts slots, so an hour handed over as one string ("6:00 PM - 7:00 PM")
+    Everything downstream — pricing, conflict checks, availability — counts
+    slots, so an hour handed over as one string ("6:00 PM - 7:00 PM")
     would otherwise be charged and blocked as a single half-hour.
     Returns (canonical_slots, error_message).
     """
@@ -489,7 +489,6 @@ def create_booking(
     slots: List[str],
     email: str = "",
     promo_code: str = "",
-    paddle_rental: int = 0,
     payment_mode: str = None,
     confirm_far_date: bool = False
     ) -> str:
@@ -582,13 +581,6 @@ def create_booking(
         # Base price (time-based: ₹300/hr for 9 AM–5 PM, ₹500/hr otherwise)
         total_price = sum(get_slot_price(s) for s in slots)
 
-        # Paddle rental pricing
-        if paddle_rental < 0 or paddle_rental > 2:
-            return "❌ Only 0, 1, or 2 premium paddles are available for rent."
-
-        paddle_hours = len(slots) * 0.5          # each slot = 30 mins = 0.5 hr
-        paddle_cost = round(paddle_rental * 50 * paddle_hours)
-        total_price += paddle_cost
         price_display = f"₹{total_price}"
 
         # Dynamic promo logic
@@ -654,7 +646,6 @@ def create_booking(
             "slots": slots,
             "promo_code": promo_code or None,
             "total_price": total_price,
-            "paddle_rental": paddle_rental,
             "payment_mode": payment_mode
         }).execute()
 
@@ -683,11 +674,8 @@ def create_booking(
         #     total_price=price_display,
         #     phone=canonical_phone,
         #     promo_code=promo_code or "",
-        #     paddle_rental=paddle_rental,
-        #     paddle_cost=paddle_cost
         # )
         # email_line = f"📧 Confirmation sent to {resolved_email}" if email_sent else "⚠️ Email confirmation could not be sent — please note your booking details above."
-        paddle_line = f"\n🏓 Premium Paddles: {paddle_rental} (₹{paddle_cost})" if paddle_rental else ""
         payment_line = f"\n💳 Payment: {payment_mode} (pay after you play)" if payment_mode else ""
 
         id_line = f"\n🆔 Booking ID: {booking_id}" if booking_id else ""
@@ -695,7 +683,6 @@ def create_booking(
             f"✅ Booking confirmed!\n"
             f"📅 Date: {booking_date}\n"
             f"⏰ Slots: {', '.join(slots)}"
-            f"{paddle_line}"
             f"{payment_line}\n"
             f"💰 Price: {price_display}"
             f"{id_line}\n"
@@ -1204,10 +1191,7 @@ def edit_booking(
         # Recalculate price if slots or promo changed — a re-split counts as a
         # slot change, since the old total was priced off the wrong slot count.
         if new_slots or new_promo_code is not None or slots_warning:
-            base_price = sum(get_slot_price(s) for s in active_slots)
-            paddle_rental = b.get("paddle_rental", 0) or 0
-            paddle_cost = round(paddle_rental * 50 * len(active_slots) * 0.5)
-            new_total = base_price + paddle_cost
+            new_total = sum(get_slot_price(s) for s in active_slots)
             promo_warning = ""
 
             if promo_to_apply:
@@ -1264,7 +1248,7 @@ def edit_booking(
 def send_email_confirmation(
     to_email, to_name, booking_date, time_block,
     selected_slots, total_price, phone,
-    promo_code="", paddle_rental=0, paddle_cost=0
+    promo_code=""
 ) -> bool:
     """Send booking confirmation email via EmailJS REST API.
     Returns True if sent successfully, False otherwise."""
@@ -1277,7 +1261,6 @@ def send_email_confirmation(
     #     print(f"[send_email_confirmation] Missing env vars: {', '.join(missing)}")
     #     return False
     #
-    # paddle_line = f"{paddle_rental} paddle(s) — ₹{paddle_cost}" if paddle_rental else "None"
     # promo_display = promo_code.upper() if promo_code else "No promo applied"
     #
     # try:
@@ -1297,7 +1280,6 @@ def send_email_confirmation(
     #                 "total_price": str(total_price),
     #                 "phone": phone,
     #                 "promo_code": promo_display,
-    #                 "paddle_rental": paddle_line,
     #             }
     #         },
     #         timeout=10
@@ -1563,84 +1545,6 @@ def edit_promo_code(
 
     except Exception as e:
         return f"Error editing promo code: {str(e)}"
-
-@tool
-def add_paddle_rental(booking_id: int, paddle_count: int) -> dict:
-    """
-    Add premium paddle rental to a confirmed booking and reprice it.
-    booking_id: the numeric ID returned by create_booking or listed by
-    get_my_bookings. Never guess an ID - look it up first.
-    paddle_count: 0, 1 or 2 premium paddles at Rs 50 per paddle per hour.
-    """
-    if paddle_count not in (0, 1, 2):
-        return {"success": False, "error": "Invalid paddle count. Must be 0, 1, or 2."}
-
-    try:
-        existing = supabase.table("bookings") \
-            .select("id, slots, paddle_rental, promo_code, total_price") \
-            .eq("id", booking_id) \
-            .execute()
-
-        # The old version reported success even when nothing matched, so Ace
-        # cheerfully confirmed paddles against invented booking IDs.
-        if not existing.data:
-            return {
-                "success": False,
-                "error": f"No booking found with ID {booking_id}. "
-                         f"Call get_my_bookings to find the real ID."
-            }
-
-        b = existing.data[0]
-        slots = parse_slots(b["slots"])
-        if not slots:
-            return {"success": False, "error": f"Booking {booking_id} has no slots recorded."}
-
-        # Reprice. Paddles were previously recorded but never charged.
-        base_price = sum(get_slot_price(s) for s in slots)
-        paddle_cost = round(paddle_count * 50 * len(slots) * 0.5)
-        new_total = base_price + paddle_cost
-        note = ""
-
-        promo_code = b.get("promo_code")
-        if promo_code:
-            promo = supabase.table("promo_codes") \
-                .select("*") \
-                .eq("code", promo_code.upper()) \
-                .eq("active", True) \
-                .execute()
-            if promo.data:
-                pr = promo.data[0]
-                if len(slots) >= (pr.get("min_slots") or 0):
-                    if pr["discount_type"] == "flat":
-                        new_total = max(0, new_total - pr["discount_value"])
-                    elif pr["discount_type"] == "percent":
-                        new_total = round(new_total * (1 - pr["discount_value"] / 100))
-                else:
-                    note = f"Promo {promo_code.upper()} no longer meets its minimum slot count; not applied."
-            else:
-                note = f"Promo {promo_code.upper()} is no longer active; not applied."
-
-        update_result = supabase.table("bookings").update({
-            "paddle_rental": paddle_count,
-            "total_price": new_total
-        }).eq("id", booking_id).execute()
-
-        if not update_result.data:
-            return {"success": False, "error": f"Booking {booking_id} could not be updated."}
-
-        return {
-            "success": True,
-            "booking_id": booking_id,
-            "paddle_count": paddle_count,
-            "paddle_cost": paddle_cost,
-            "previous_total": b.get("total_price"),
-            "new_total": new_total,
-            "note": note
-        }
-
-    except Exception as e:
-        return {"success": False, "error": str(e)}
-
 
 @tool
 def get_customer_by_phone(phone: str) -> dict:
