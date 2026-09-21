@@ -1,4 +1,4 @@
-from supabase import create_client
+from db import get_client
 from langchain_core.tools import tool
 from datetime import date, datetime, timedelta
 from twilio.rest import Client
@@ -89,7 +89,7 @@ def resolve_date(text: str, today: Optional[date] = None) -> Optional[str]:
 
 load_dotenv()
 
-supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_ANON_KEY"))
+supabase = get_client()
 
 twilio_client = Client(
     os.getenv("TWILIO_ACCOUNT_SID"),
@@ -490,7 +490,8 @@ def create_booking(
     email: str = "",
     promo_code: str = "",
     paddle_rental: int = 0,
-    payment_mode: str = None
+    payment_mode: str = None,
+    confirm_far_date: bool = False
     ) -> str:
 
     """
@@ -518,10 +519,10 @@ def create_booking(
         resolved_date_obj = date.fromisoformat(booking_date)
         if resolved_date_obj < today:
             return f"❌ Booking refused: {booking_date} is in the past."
-        if (resolved_date_obj - today).days > 60:
+        if (resolved_date_obj - today).days > 60 and not confirm_far_date:
             return (
                 f"⚠️ {booking_date} is more than 60 days out — please confirm this is correct "
-                f"with the customer before retrying with confirm_far_date=true."
+                f"with the customer, then call create_booking again with confirm_far_date=True."
             )
         
         canonical_phone = phone
@@ -642,14 +643,8 @@ def create_booking(
 
             price_display = f"₹{total_price}"
 
-            # Log usage
-            supabase.table("promo_usage").insert({
-                "promo_code": promo_code.upper(),
-                "phone": canonical_phone
-            }).execute()
-
         # Insert booking
-        supabase.table("bookings").insert({
+        insert_result = supabase.table("bookings").insert({
             "name": name,
             "phone": canonical_phone,
             # "email": resolved_email,  # email feature disabled
@@ -662,6 +657,20 @@ def create_booking(
             "paddle_rental": paddle_rental,
             "payment_mode": payment_mode
         }).execute()
+
+        booking_id = insert_result.data[0].get("id") if insert_result.data else None
+
+        # Promo usage is recorded only now that the booking actually exists. It
+        # used to be written first, so a failed insert burned one of the
+        # customer's allowed uses for a booking they never got.
+        if promo_code:
+            try:
+                supabase.table("promo_usage").insert({
+                    "promo_code": promo_code.upper(),
+                    "phone": canonical_phone
+                }).execute()
+            except Exception as e:
+                print(f"[create_booking] promo usage log failed for {promo_code}: {e}")
 
         # --- Email confirmation disabled (commented out, not deleted) ---
         # # Send email confirmation
@@ -681,13 +690,15 @@ def create_booking(
         paddle_line = f"\n🏓 Premium Paddles: {paddle_rental} (₹{paddle_cost})" if paddle_rental else ""
         payment_line = f"\n💳 Payment: {payment_mode} (pay after you play)" if payment_mode else ""
 
+        id_line = f"\n🆔 Booking ID: {booking_id}" if booking_id else ""
         return (
             f"✅ Booking confirmed!\n"
             f"📅 Date: {booking_date}\n"
             f"⏰ Slots: {', '.join(slots)}"
             f"{paddle_line}"
             f"{payment_line}\n"
-            f"💰 Price: {price_display}\n"
+            f"💰 Price: {price_display}"
+            f"{id_line}\n"
         )
 
     except Exception as e:
@@ -792,8 +803,9 @@ def get_my_bookings(phone: str) -> str:
         lines = []
         for b in result.data:
             slots = parse_slots(b["slots"])
+            block = (b.get("time_block") or "").capitalize() or "—"
             lines.append(
-                f"📅 {b['booking_date']} | {b['time_block'].capitalize()} | "
+                f"🆔 {b['id']} | 📅 {b['booking_date']} | {block} | "
                 f"{', '.join(slots)} | ₹{b['total_price']}"
             )
         return "Your upcoming bookings:\n" + "\n".join(lines)
@@ -896,6 +908,30 @@ def block_slots(booking_date: str, slots: List[str]) -> str:
         slots, slot_error = normalize_slots(slots)
         if slot_error:
             return slot_error
+
+        # Refuse to block over an existing booking. The old code inserted a
+        # BLOCKED row alongside it: the slot looked blocked, the customer still
+        # held a reservation, and nobody was told.
+        existing = supabase.table("bookings") \
+            .select("id, name, phone, slots") \
+            .eq("booking_date", booking_date) \
+            .execute()
+
+        clashes = []
+        for row in existing.data or []:
+            overlap = set(slots) & set(parse_slots(row["slots"]))
+            if overlap:
+                who = "already blocked" if row["name"] == "BLOCKED" else f"{row['name']} ({row['phone']})"
+                clashes.append(
+                    f"  • {', '.join(sorted(overlap, key=_SLOT_INDEX.get))} — {who} (ID {row['id']})"
+                )
+
+        if clashes:
+            return (
+                f"❌ Cannot block — these slots on {booking_date} are already taken:\n"
+                + "\n".join(clashes)
+                + "\n\nCancel or move those bookings first, then block again."
+            )
 
         time_block = derive_time_block(slots[0])
         supabase.table("bookings").insert({
@@ -1123,6 +1159,31 @@ def edit_booking(
         if slot_error:
             return slot_error
 
+        # A move must not land on top of another booking. The old code wrote the
+        # new date/slots straight through, silently double-booking the court.
+        target_date = new_date or b["booking_date"]
+        if new_slots or new_date:
+            others = supabase.table("bookings") \
+                .select("id, name, phone, slots") \
+                .eq("booking_date", target_date) \
+                .neq("id", booking_id) \
+                .execute()
+
+            clashes = []
+            for row in others.data or []:
+                overlap = set(active_slots) & set(parse_slots(row["slots"]))
+                if overlap:
+                    who = "BLOCKED" if row["name"] == "BLOCKED" else f"{row['name']} ({row['phone']})"
+                    clashes.append(
+                        f"  \u2022 {', '.join(sorted(overlap, key=_SLOT_INDEX.get))} \u2014 {who} (ID {row['id']})"
+                    )
+
+            if clashes:
+                return (
+                    f"\u274C Cannot move booking {booking_id} to {target_date} \u2014 these slots are "
+                    f"already taken:\n" + "\n".join(clashes)
+                )
+
         slots_warning = ""
         if new_slots:
             updates["slots"] = active_slots
@@ -1178,6 +1239,11 @@ def edit_booking(
 
             updates["total_price"] = new_total
             updates["promo_code"] = promo_to_apply  # None if removed/invalid
+
+        # Keep time_block consistent with the slots actually stored; it drives
+        # the display in get_my_bookings and the ordering in get_all_bookings.
+        if "slots" in updates:
+            updates["time_block"] = derive_time_block(active_slots[0])
 
         if not updates:
             return "No changes provided."
@@ -1251,64 +1317,100 @@ def edit_booking_total(
     new_total: int,
     booking_ids: List[int] = None,
     phone: str = None,
-    name: str = None
+    name: str = None,
+    booking_date: str = None,
+    after_date: str = None,
+    before_date: str = None,
+    confirm_bulk: bool = False
     ) -> str:
     """
-    Admin: Override the total price for bookings by ID, phone number, or customer name.
-    At least one filter (booking_ids, phone, or name) must be provided.
-    new_total: the new total price to set (in ₹)
-    booking_ids: list of specific booking IDs to update (optional)
-    phone: update all bookings for this phone number (optional)
-    name: update all bookings matching this name (optional)
+    Admin: Override the total price for bookings. At least one filter is required.
+    Filters are combined with AND, so phone + booking_date means that customer's
+    bookings on that date only - not every booking matching either.
+    new_total: the new total price to set (in Rs)
+    booking_ids: specific booking IDs (optional)
+    phone: restrict to this phone number (optional)
+    name: restrict to names containing this text (optional)
+    booking_date: restrict to a single date, natural phrases accepted (optional)
+    after_date / before_date: restrict to a date range, inclusive (optional)
+    confirm_bulk: when more than one booking matches, the tool lists them and
+    stops. Read the list back to the admin, then call again with
+    confirm_bulk=True to apply the change to all of them.
     """
     try:
-        if not any([booking_ids, phone, name]):
-            return "❌ Please provide at least one filter: booking_ids, phone, or name."
+        if not any([booking_ids, phone, name, booking_date, after_date, before_date]):
+            return "\u274C Please provide at least one filter: booking_ids, phone, name, booking_date, after_date or before_date."
 
-        matched_ids = set()
+        today = datetime.now(IST).date()
 
-        # Fetch by booking IDs directly
+        def _resolve(value, label):
+            if not value:
+                return None, None
+            resolved = resolve_date(value, today)
+            if not resolved:
+                return None, f"\u274C '{value}' is not a recognised {label}."
+            return resolved, None
+
+        booking_date, err = _resolve(booking_date, "date")
+        if err:
+            return err
+        after_date, err = _resolve(after_date, "after_date")
+        if err:
+            return err
+        before_date, err = _resolve(before_date, "before_date")
+        if err:
+            return err
+
+        # One query, all filters ANDed. The old version ran a query per filter
+        # and unioned the IDs, so passing a phone rewrote that customer's entire
+        # booking history.
+        query = supabase.table("bookings") \
+            .select("id, name, phone, booking_date, slots, total_price") \
+            .neq("name", "BLOCKED")
+
         if booking_ids:
-            result = supabase.table("bookings") \
-                .select("id, name, phone, booking_date, total_price") \
-                .in_("id", booking_ids) \
-                .execute()
-            for b in result.data:
-                matched_ids.add(b["id"])
-
-        # Fetch by phone
+            query = query.in_("id", booking_ids)
         if phone:
-            variants = phone_variants(phone)
-            result = supabase.table("bookings") \
-                .select("id, name, phone, booking_date, total_price") \
-                .in_("phone", variants) \
-                .neq("name", "BLOCKED") \
-                .execute()
-            for b in result.data:
-                matched_ids.add(b["id"])
+            query = query.in_("phone", phone_variants(phone))
+        if booking_date:
+            query = query.eq("booking_date", booking_date)
+        if after_date:
+            query = query.gte("booking_date", after_date)
+        if before_date:
+            query = query.lte("booking_date", before_date)
 
-        # Fetch by name
+        rows = query.order("booking_date").execute().data or []
+
+        # Partial name match is not expressible alongside the rest, so filter here.
         if name:
-            result = supabase.table("bookings") \
-                .select("id, name, phone, booking_date, total_price") \
-                .ilike("name", f"%{name}%") \
-                .neq("name", "BLOCKED") \
-                .execute()
-            for b in result.data:
-                matched_ids.add(b["id"])
+            needle = name.lower()
+            rows = [r for r in rows if needle in (r.get("name") or "").lower()]
 
-        if not matched_ids:
-            return "❌ No matching bookings found for the provided filters."
+        if not rows:
+            return "\u274C No bookings match all of those filters."
 
-        # Apply update to all matched IDs
+        if len(rows) > 1 and not confirm_bulk:
+            listing = "\n".join(
+                f"  \U0001F194 {r['id']} | \U0001F4C5 {r['booking_date']} | \U0001F464 {r['name']} | "
+                f"\u20B9{r['total_price']} \u2192 \u20B9{new_total}"
+                for r in rows
+            )
+            return (
+                f"\u26A0\uFE0F {len(rows)} bookings match. Nothing has been changed yet:\n"
+                f"{listing}\n\n"
+                f"Confirm with the admin, then call edit_booking_total again with the same "
+                f"filters and confirm_bulk=True."
+            )
+
+        matched_ids = [r["id"] for r in rows]
         supabase.table("bookings") \
             .update({"total_price": new_total}) \
-            .in_("id", list(matched_ids)) \
+            .in_("id", matched_ids) \
             .execute()
 
         return (
-            f"✅ Total updated to ₹{new_total} for {len(matched_ids)} booking(s).\n"
-            f"🆔 Affected IDs: {', '.join(str(i) for i in sorted(matched_ids))}"
+            f"\u2705 Total updated to \u20B9{new_total} for {len(matched_ids)} booking(s).\n"
+            f"\U0001F194 Affected IDs: {', '.join(str(i) for i in matched_ids)}"
         )
 
     except Exception as e:
@@ -1463,19 +1565,81 @@ def edit_promo_code(
         return f"Error editing promo code: {str(e)}"
 
 @tool
-def add_paddle_rental(booking_id: str, paddle_count: int) -> dict:
+def add_paddle_rental(booking_id: int, paddle_count: int) -> dict:
     """
-    Add premium paddle rental to a confirmed booking.
-    Only valid for paddle_count of 1 or 2.
+    Add premium paddle rental to a confirmed booking and reprice it.
+    booking_id: the numeric ID returned by create_booking or listed by
+    get_my_bookings. Never guess an ID - look it up first.
+    paddle_count: 0, 1 or 2 premium paddles at Rs 50 per paddle per hour.
     """
-    if paddle_count not in [0, 1, 2]:
+    if paddle_count not in (0, 1, 2):
         return {"success": False, "error": "Invalid paddle count. Must be 0, 1, or 2."}
 
-    result = supabase.table("bookings").update({
-        "paddle_rental": paddle_count
-    }).eq("id", booking_id).execute()
+    try:
+        existing = supabase.table("bookings") \
+            .select("id, slots, paddle_rental, promo_code, total_price") \
+            .eq("id", booking_id) \
+            .execute()
 
-    return {"success": True}
+        # The old version reported success even when nothing matched, so Ace
+        # cheerfully confirmed paddles against invented booking IDs.
+        if not existing.data:
+            return {
+                "success": False,
+                "error": f"No booking found with ID {booking_id}. "
+                         f"Call get_my_bookings to find the real ID."
+            }
+
+        b = existing.data[0]
+        slots = parse_slots(b["slots"])
+        if not slots:
+            return {"success": False, "error": f"Booking {booking_id} has no slots recorded."}
+
+        # Reprice. Paddles were previously recorded but never charged.
+        base_price = sum(get_slot_price(s) for s in slots)
+        paddle_cost = round(paddle_count * 50 * len(slots) * 0.5)
+        new_total = base_price + paddle_cost
+        note = ""
+
+        promo_code = b.get("promo_code")
+        if promo_code:
+            promo = supabase.table("promo_codes") \
+                .select("*") \
+                .eq("code", promo_code.upper()) \
+                .eq("active", True) \
+                .execute()
+            if promo.data:
+                pr = promo.data[0]
+                if len(slots) >= (pr.get("min_slots") or 0):
+                    if pr["discount_type"] == "flat":
+                        new_total = max(0, new_total - pr["discount_value"])
+                    elif pr["discount_type"] == "percent":
+                        new_total = round(new_total * (1 - pr["discount_value"] / 100))
+                else:
+                    note = f"Promo {promo_code.upper()} no longer meets its minimum slot count; not applied."
+            else:
+                note = f"Promo {promo_code.upper()} is no longer active; not applied."
+
+        update_result = supabase.table("bookings").update({
+            "paddle_rental": paddle_count,
+            "total_price": new_total
+        }).eq("id", booking_id).execute()
+
+        if not update_result.data:
+            return {"success": False, "error": f"Booking {booking_id} could not be updated."}
+
+        return {
+            "success": True,
+            "booking_id": booking_id,
+            "paddle_count": paddle_count,
+            "paddle_cost": paddle_cost,
+            "previous_total": b.get("total_price"),
+            "new_total": new_total,
+            "note": note
+        }
+
+    except Exception as e:
+        return {"success": False, "error": str(e)}
 
 
 @tool
@@ -1500,15 +1664,33 @@ def get_customer_by_phone(phone: str) -> dict:
     return {"found": False}
 
 @tool
-def create_customer_profile(phone: str, name: str, email: str) -> dict:
-    """Save or update a customer's profile in the customers table."""
+def create_customer_profile(phone: str, name: str, email: str = "") -> dict:
+    """Save or update a customer's profile in the customers table.
+    email is optional: the email feature is disabled, so leave it blank rather
+    than inventing an address. An email already on file is never overwritten
+    with a blank."""
     try:
+        canonical_phone = normalize_phone(phone)
+
+        prior_email = ""
+        existing = supabase.table("customers") \
+            .select("email") \
+            .in_("phone", phone_variants(canonical_phone)) \
+            .limit(1) \
+            .execute()
+        if existing.data:
+            prior_email = (existing.data[0].get("email") or "").strip()
+
         supabase.table("customers").upsert({
-            "phone": phone,
+            "phone": canonical_phone,
             "name": name,
-            "email": email
+            "email": (email or "").strip() or prior_email or ""
         }, on_conflict="phone").execute()
-    
+
+        # The old version fell off the end of the try and returned None, so the
+        # model could not tell a successful save from a failed one.
+        return {"success": True, "phone": canonical_phone, "name": name}
+
     except Exception as e:
         print(f"[create_customer_profile error] {e}")
         return {"success": False, "error": str(e)}

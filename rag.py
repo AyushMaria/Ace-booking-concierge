@@ -1,12 +1,12 @@
 import os
 import re
-from supabase import create_client
+from db import get_client
 from google.genai import Client
 from dotenv import load_dotenv
 
 load_dotenv()
 
-supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_ANON_KEY"))
+supabase = get_client()
 
 EMBED_MODEL = "gemini-embedding-2"
 

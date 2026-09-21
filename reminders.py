@@ -4,7 +4,7 @@ import json
 import pytz
 from twilio.rest import Client
 from twilio.base.exceptions import TwilioRestException
-from supabase import create_client
+from db import get_client
 from dotenv import load_dotenv
 from tools import normalize_phone, parse_slots
 
@@ -12,10 +12,7 @@ load_dotenv()
 
 ist = pytz.timezone("Asia/Kolkata")
 
-supabase = create_client(
-    os.getenv("SUPABASE_URL"),
-    os.getenv("SUPABASE_ANON_KEY")
-)
+supabase = get_client()
 
 twilio_client = Client(
     os.environ["TWILIO_ACCOUNT_SID"],

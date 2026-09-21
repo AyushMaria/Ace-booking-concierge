@@ -8,11 +8,11 @@ from sessions import get_session, update_session, is_admin_mode, set_admin_mode
 from reminders import run_booking_reminders
 import os
 from tools import normalize_phone
-from supabase import create_client
+from db import get_client
 
 
 load_dotenv()
-supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_ANON_KEY"))
+supabase = get_client()
 
 app = FastAPI()
 twilio_client = Client(os.environ["TWILIO_ACCOUNT_SID"], os.environ["TWILIO_AUTH_TOKEN"])

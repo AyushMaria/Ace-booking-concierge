@@ -112,7 +112,15 @@ def get_system_prompt(phone: str = "", user_message: str = ""):
         to repeat their name — just confirm briefly (e.g. "Booking this for {{name}}, right?").
         - Only ask for the name if get_customer_by_phone returns found=False (new customer).
         - After a successful create_booking for a new customer, call create_customer_profile() 
-        to save their name against {phone} so future bookings skip this step.
+        to save their name against {phone} so future bookings skip this step. Leave the
+        email blank - never invent one.
+
+        BOOKING IDS (needed by the paddle and cancel flows):
+        - create_booking returns a Booking ID. Remember it for the rest of the chat.
+        - add_paddle_rental needs that numeric ID. If you do not have it, call
+          get_my_bookings first and read the ID from the list. Never invent an ID.
+        - If the customer has more than one booking on a date, pass the slots of the
+          one they mean to cancel_booking, or it will ask you which.
         """
 
 def get_admin_prompt():
@@ -167,7 +175,11 @@ def get_admin_prompt():
         - get_bookings_by_name(names) — search bookings by customer name (partial match)
         - create_promo_code(code, discount_type, discount_value, ...) — create a new promo code
         - edit_booking(id, ...) — edit date, slots, name, phone or email of a booking or promo code of a booking; recalculates price automatically
-        - edit_booking_total(new_total, ...) — override total price by booking ID, phone, or name
+        - edit_booking_total(new_total, booking_ids, phone, name, booking_date, after_date, before_date, confirm_bulk)
+          — override total price. Filters combine with AND, so narrow with a date or an ID
+          rather than passing a phone on its own. If more than one booking matches, the tool
+          lists them and changes nothing: read that list back to me, then call again with
+          confirm_bulk=True
         - get_revenue(after_date, before_date, name, phone, email) — get total revenue with optional filters;
           supports date ranges (e.g. after April 1st, before March 31st, or between two dates),
           and per-customer breakdowns by name, phone, or email

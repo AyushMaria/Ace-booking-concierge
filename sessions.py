@@ -1,10 +1,10 @@
 # sessions.py — full replacement
-from supabase import create_client
+from db import get_client
 import os
 from datetime import datetime
 import pytz
 
-supabase = create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_ANON_KEY"])
+supabase = get_client()
 
 IST = pytz.timezone("Asia/Kolkata")
 
