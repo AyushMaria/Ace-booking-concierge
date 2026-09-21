@@ -209,3 +209,7 @@ todo.md
 
 # Local database migrations (run manually in Supabase, not deployed)
 migrations/
+
+# AI assistant config / local audit notes
+CLAUDE.md
+FAULT_AUDIT.md

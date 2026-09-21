@@ -337,6 +337,17 @@ def derive_time_block(slot: str) -> str:
         return "afternoon"
     return "evening"
 
+
+def slot_has_started(booking_date: str, slot: str, now: datetime = None) -> bool:
+    """True when this slot's start time is already in the past on that date."""
+    now = now or datetime.now(IST)
+    start_str = slot.split(" - ")[0].strip()
+    try:
+        slot_start = datetime.strptime(f"{booking_date} {start_str}", "%Y-%m-%d %I:%M %p")
+    except ValueError:
+        return False
+    return IST.localize(slot_start) <= now
+
 @tool
 def initiate_message(phone: str) -> str:
     """
@@ -444,13 +455,7 @@ def check_available_slots(booking_date: str) -> str:
         available = [s for s in TIME_SLOTS if s not in booked]
 
         if booking_date == today:
-            def slot_start_passed(slot_str):
-                start_str = slot_str.split(" - ")[0]
-                slot_start = datetime.strptime(f"{booking_date} {start_str}", "%Y-%m-%d %I:%M %p")
-                slot_start = ist.localize(slot_start)
-                return slot_start <= now
-
-            available = [s for s in available if not slot_start_passed(s)]
+            available = [s for s in available if not slot_has_started(booking_date, s, now)]
 
         if not available:
             return f"No slots available on {booking_date}."
@@ -543,6 +548,18 @@ def create_booking(
         slots, slot_error = normalize_slots(slots)
         if slot_error:
             return slot_error
+
+        # Refuse slots that have already started today. check_available_slots
+        # filters these out, so without the same check here the agent could book
+        # a slot it had just reported as unavailable.
+        now_ist = datetime.now(IST)
+        if booking_date == now_ist.strftime("%Y-%m-%d"):
+            passed = [s for s in slots if slot_has_started(booking_date, s, now_ist)]
+            if passed:
+                return (
+                    f"\u274C These slots have already started today: {', '.join(passed)}. "
+                    f"Please pick a later slot."
+                )
 
         # Check for conflicts first
         time_block = derive_time_block(slots[0])
@@ -678,9 +695,13 @@ def create_booking(
 
 
 @tool
-def cancel_booking(phone: str, booking_date: str) -> str:
+def cancel_booking(phone: str, booking_date: str, slots: List[str] = None) -> str:
     """
     Cancel a booking by phone number and date.
+    slots: optional - the slot(s) of the booking to cancel, e.g. ["7:00 PM - 7:30 PM"].
+    Give this whenever the customer has more than one booking on that date. If
+    several bookings match and no slots are given, the tool lists them and asks
+    rather than picking one, because deleting a booking cannot be undone.
     """
     try:
         ist = pytz.timezone("Asia/Kolkata")
@@ -690,29 +711,60 @@ def cancel_booking(phone: str, booking_date: str) -> str:
         if not resolved:
             example = (today + timedelta(days=14)).strftime("%Y-%m-%d")
             return (
-                f"❌ '{booking_date}' is not a recognised date. "
+                f"\u274C '{booking_date}' is not a recognised date. "
                 f"Try a phrase like 'tomorrow' or an exact date like '{example}'."
             )
         booking_date = resolved
 
         if date.fromisoformat(booking_date) < today:
-            return f"❌ Booking refused: {booking_date} is in the past."
-        
+            return f"\u274C Booking refused: {booking_date} is in the past."
+
         variants = phone_variants(phone)
 
         result = supabase.table("bookings") \
             .select("id, slots, booking_date") \
             .in_("phone", variants) \
             .eq("booking_date", booking_date) \
+            .neq("name", "BLOCKED") \
+            .order("id") \
             .execute()
 
-        if not result.data:
+        matches = result.data or []
+        if not matches:
             return f"No bookings found for {phone} on {booking_date}."
 
-        booking_id = result.data[0]["id"]
-        supabase.table("bookings").delete().eq("id", booking_id).execute()
+        # Narrow to the booking the customer actually named.
+        if slots:
+            wanted, slot_error = normalize_slots(slots)
+            if slot_error:
+                return slot_error
+            wanted_set = set(wanted)
+            matches = [b for b in matches if wanted_set & set(parse_slots(b["slots"]))]
+            if not matches:
+                return (
+                    f"No booking on {booking_date} covers {', '.join(wanted)}. "
+                    f"Ask the customer which slot they mean."
+                )
 
-        return f"✅ Booking on {booking_date} has been cancelled successfully."
+        # Several still match: ask instead of deleting an arbitrary row.
+        if len(matches) > 1:
+            listing = "\n".join(
+                f"  {i}. {', '.join(parse_slots(b['slots'])) or 'no slots recorded'}"
+                for i, b in enumerate(matches, 1)
+            )
+            return (
+                f"\u26A0\uFE0F There are {len(matches)} bookings on {booking_date} for this "
+                f"number:\n{listing}\n"
+                f"Ask the customer which one to cancel, then call cancel_booking again "
+                f"with the slots of that booking."
+            )
+
+        booking = matches[0]
+        cancelled_slots = parse_slots(booking["slots"])
+        supabase.table("bookings").delete().eq("id", booking["id"]).execute()
+
+        slot_text = f" ({', '.join(cancelled_slots)})" if cancelled_slots else ""
+        return f"\u2705 Booking on {booking_date}{slot_text} has been cancelled successfully."
 
     except Exception as e:
         return f"Cancellation failed: {str(e)}"
@@ -1489,8 +1541,8 @@ def sync_website_customers(dry_run: bool = False) -> str:
 
             seen[phone] = {
                 "phone": phone,
-                "name": b.get("name", "").strip(),
-                "email": b.get("email", "").strip() or None
+                "name": (b.get("name") or "").strip(),
+                "email": (b.get("email") or "").strip() or None
             }
 
         all_booking_phones = list(seen.keys())

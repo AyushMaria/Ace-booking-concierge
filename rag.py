@@ -179,10 +179,20 @@ def seed_knowledge():
 
 
 def retrieve_knowledge(query: str, top_k: int = 5, category: str = None) -> list[str]:
-    query_embedding = get_embedding(query)
-    params = {"query_embedding": query_embedding, "match_count": top_k}
-    if category:
-        params["filter_category"] = category
+    """Return matching knowledge chunks, or [] when retrieval fails.
 
-    result = supabase.rpc("match_knowledge", params).execute()
-    return [row["content"] for row in result.data]
+    This never raises. It calls the embedding API and a Supabase RPC, either of
+    which can fail transiently; propagating that would abort the whole reply and
+    leave the customer with silence rather than a degraded answer.
+    """
+    try:
+        query_embedding = get_embedding(query)
+        params = {"query_embedding": query_embedding, "match_count": top_k}
+        if category:
+            params["filter_category"] = category
+
+        result = supabase.rpc("match_knowledge", params).execute()
+        return [row["content"] for row in (result.data or [])]
+    except Exception as e:
+        print(f"[RAG] retrieval failed ({type(e).__name__}: {e}) - continuing without context")
+        return []
