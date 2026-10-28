@@ -1,19 +1,25 @@
-import os
+"""Venue knowledge for Ace: pricing, hours, policies and FAQs.
+
+The knowledge base is eight short chunks, about 1,100 tokens in total. Ace used
+to embed each incoming message with Gemini and pull the five nearest chunks
+from pgvector. It now puts all of them in the system prompt instead: that
+removes Ace's last dependency on Google, costs next to nothing once the prompt
+is cached, and it was already fetching five of the eight on every message.
+"""
 import re
+import time
+
 from db import get_client
-from google.genai import Client
 from dotenv import load_dotenv
 
 load_dotenv()
 
 supabase = get_client()
 
-EMBED_MODEL = "gemini-embedding-2"
-
-def get_embedding(text: str) -> list[float]:
-    client = Client(api_key=os.getenv("GEMINI_API_KEY"))
-    result = client.models.embed_content(model=EMBED_MODEL, contents=text)
-    return result.embeddings[0].values
+# Chunks change only when this file is re-seeded, so a short cache saves a
+# Supabase round trip per message without serving stale knowledge for long.
+_CACHE_TTL_SECONDS = 300
+_cache = {"chunks": None, "loaded_at": 0.0}
 
 
 def chunk_text(text: str, max_chars: int = 500) -> list[str]:
@@ -33,8 +39,8 @@ def chunk_text(text: str, max_chars: int = 500) -> list[str]:
 def seed_knowledge(replace: bool = True):
     """Rewrite the knowledge base from the chunks below.
 
-    The chunks live in Supabase as embeddings, so editing this file alone
-    changes nothing at runtime — run it (`python rag.py`) after every edit.
+    The deployed app reads the chunks from Supabase, never from this file, so
+    an edit here changes nothing until this runs: `python rag.py`.
     """
     knowledge = [
         {
@@ -169,46 +175,58 @@ def seed_knowledge(replace: bool = True):
         }
     ]
 
-    # Embed everything BEFORE touching the table. The old version inserted as
-    # it went, so an embedding call failing halfway through left the knowledge
-    # base in a partial state — and because it never deleted, a second run left
-    # two copies of every chunk instead, which crowded real matches out of the
-    # top-k. Build the full set first, then swap it in.
-    prepared = []
-    for item in knowledge:
-        for chunk in chunk_text(item["text"]):
-            prepared.append({
-                "category": item["category"],
-                "content": chunk,
-                "embedding": get_embedding(chunk),
-            })
+    rows = [
+        {"category": item["category"], "content": chunk}
+        for item in knowledge
+        for chunk in chunk_text(item["text"])
+    ]
 
-    if replace:
-        supabase.table("knowledge_chunks").delete().gte("id", 0).execute()
-
-    supabase.table("knowledge_chunks").insert(prepared).execute()
-
-    print(f"[RAG] Seeded {len(prepared)} chunks from {len(knowledge)} knowledge items.")
-
-
-def retrieve_knowledge(query: str, top_k: int = 5, category: str = None) -> list[str]:
-    """Return matching knowledge chunks, or [] when retrieval fails.
-
-    This never raises. It calls the embedding API and a Supabase RPC, either of
-    which can fail transiently; propagating that would abort the whole reply and
-    leave the customer with silence rather than a degraded answer.
-    """
+    # Insert the new rows first and only then remove the old ones, so a failed
+    # insert leaves the live knowledge base untouched rather than empty.
     try:
-        query_embedding = get_embedding(query)
-        params = {"query_embedding": query_embedding, "match_count": top_k}
-        if category:
-            params["filter_category"] = category
-
-        result = supabase.rpc("match_knowledge", params).execute()
-        return [row["content"] for row in (result.data or [])]
+        inserted = supabase.table("knowledge_chunks").insert(rows).execute()
     except Exception as e:
-        print(f"[RAG] retrieval failed ({type(e).__name__}: {e}) - continuing without context")
-        return []
+        if "embedding" in str(e) and "null" in str(e).lower():
+            raise SystemExit(
+                "knowledge_chunks.embedding is still NOT NULL from the embedding era.\n"
+                "Run this once in the Supabase SQL Editor, then seed again:\n"
+                "  alter table public.knowledge_chunks alter column embedding drop not null;"
+            )
+        raise
+
+    new_ids = [r["id"] for r in (inserted.data or [])]
+    if replace and new_ids:
+        # Guarded: an empty id list would make "not in ()" match every row.
+        supabase.table("knowledge_chunks").delete().not_.in_("id", new_ids).execute()
+
+    _cache["chunks"] = None  # next load_knowledge() call picks up the new rows
+    print(f"[knowledge] Seeded {len(rows)} chunks from {len(knowledge)} knowledge items.")
+
+
+def load_knowledge() -> list[str]:
+    """Return every knowledge chunk, in a stable order. Never raises.
+
+    On a failed read it serves the last good copy if there is one, and [] if
+    not; the prompt then tells Ace not to quote prices or policies it cannot
+    see. Raising would abort the whole reply and leave the customer with
+    silence instead.
+    """
+    now = time.monotonic()
+    if _cache["chunks"] is not None and now - _cache["loaded_at"] < _CACHE_TTL_SECONDS:
+        return _cache["chunks"]
+    try:
+        result = (
+            supabase.table("knowledge_chunks")
+            .select("content")
+            .order("id")
+            .execute()
+        )
+        chunks = [r["content"] for r in (result.data or []) if (r.get("content") or "").strip()]
+        _cache.update(chunks=chunks, loaded_at=now)
+        return chunks
+    except Exception as e:
+        print(f"[knowledge] load failed ({type(e).__name__}: {e}) - using {'cached copy' if _cache['chunks'] else 'no context'}")
+        return _cache["chunks"] or []
 
 
 if __name__ == "__main__":

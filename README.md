@@ -1,6 +1,6 @@
 # Ace — WhatsApp Booking Concierge
 
-> An AI-powered WhatsApp booking agent for Vibe & Volley Pickleball Courts, built with LangGraph, Google Gemini, FastAPI, and Supabase.
+> An AI-powered WhatsApp booking agent for Vibe & Volley Pickleball Courts, built with LangGraph, Claude, FastAPI, and Supabase.
 
 ## Overview
 
@@ -9,7 +9,7 @@ Ace is a conversational WhatsApp bot that automates court bookings, cancellation
 - **Customer Mode** — Check slot availability, create/cancel/edit bookings, view upcoming reservations, and get answers to FAQs via retrieval-augmented generation (RAG).
 - **Admin Mode** — Full operational control: view/search/delete/edit any booking, manage promo codes, block slots for maintenance, and pull revenue reports.
 
-The agent runs on **Gemini 2.5 Flash** via LangChain/LangGraph's `create_react_agent`, is exposed as a **FastAPI** webhook, and integrates with the **Twilio WhatsApp Business API** for messaging. It is deployed on **Railway**.
+The agent runs on **Claude Sonnet 5.5** (set by `ANTHROPIC_MODEL`) via LangChain/LangGraph's `create_react_agent`, is exposed as a **FastAPI** webhook, and integrates with the **Twilio WhatsApp Business API** for messaging. It is deployed on **Railway**.
 
 ## Features
 
@@ -48,11 +48,11 @@ Ace has been hardened against date hallucination — a failure mode where the LL
 | Layer | Technology |
 |---|---|
 | AI Agent | LangGraph + LangChain |
-| LLM | Google Gemini 2.5 Flash (`langchain-google-genai`) |
+| LLM | Anthropic Claude Sonnet 5.5 by default, via `langchain-anthropic` |
 | Backend | FastAPI + Uvicorn |
 | Messaging | Twilio WhatsApp Business API |
-| Database | Supabase (PostgreSQL + `pgvector`) |
-| Knowledge Retrieval | RAG over `pgvector`-embedded FAQ/policy chunks (`rag.py`) |
+| Database | Supabase (PostgreSQL) |
+| Venue Knowledge | All FAQ/policy chunks from `knowledge_chunks`, loaded into the system prompt and cached (`rag.py`) |
 | Session State | Persisted per-phone-number history (Supabase-backed) |
 | Reminders | Scheduled cron endpoint for booking reminders (`reminders.py`, `reminder_script.py`) |
 | Deployment | Railway (`Procfile` + `runtime.txt`) |
@@ -81,8 +81,8 @@ Ace-booking-concierge/
 
 - Python 3.11+
 - A [Twilio](https://www.twilio.com/) account with WhatsApp enabled
-- A [Supabase](https://supabase.com/) project with booking, session, and `pgvector`-enabled knowledge tables
-- A [Google AI](https://aistudio.google.com/) API key (Gemini)
+- A [Supabase](https://supabase.com/) project with booking, session and knowledge tables
+- An [Anthropic](https://platform.claude.com/) API key
 
 ### 1. Clone the Repository
 
@@ -102,7 +102,8 @@ pip install -r requirements.txt
 Copy `.env_template` to `.env` and fill in the required values:
 
 ```
-GOOGLE_API_KEY=your_google_gemini_api_key
+ANTHROPIC_API_KEY=your_anthropic_api_key
+ANTHROPIC_MODEL=claude-sonnet-5-5   # optional; claude-haiku-5-5 is the cheaper option
 SUPABASE_URL=your_supabase_project_url
 SUPABASE_KEY=your_supabase_service_role_key
 TWILIO_AUTH_TOKEN=your_twilio_auth_token
