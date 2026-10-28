@@ -19,9 +19,10 @@ import pytz
 # environment by the client itself.
 ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-5-5")
 
+# No temperature: Claude Sonnet 5.5 rejects the parameter outright
+# ("`temperature` is deprecated for this model"), failing every reply.
 llm = ChatAnthropic(
     model=ANTHROPIC_MODEL,
-    temperature=0,
     max_tokens=2048,
     timeout=60,
     max_retries=2,
