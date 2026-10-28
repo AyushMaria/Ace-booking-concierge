@@ -25,14 +25,19 @@ def resolve_date(text: str, today: Optional[date] = None) -> Optional[str]:
     Returns None if it cannot be resolved deterministically.
 
     Supports: 'today', 'tomorrow', 'day after tomorrow',
-    'next <weekday>', '<weekday>', and explicit ISO or
-    'DD-MM-YYYY' / 'DD/MM/YYYY' / 'DD Mon YYYY' forms.
+    'next <weekday>', '<weekday>', explicit ISO or
+    'DD-MM-YYYY' / 'DD/MM/YYYY' / 'DD Mon YYYY' / 'Mon DD YYYY' forms,
+    and a day and month with no year ('17 nov', '17th Nov', 'nov 17'),
+    which means the next time that date comes round.
     """
     if not text:
         return None
     today = today or datetime.now(IST).date()
     raw = text.strip().lower()
     raw = re.sub(r"[\s,]+", " ", raw)
+    # "17th nov" -> "17 nov"; "sept" is how many people shorten September.
+    raw = re.sub(r"\b(\d{1,2})(st|nd|rd|th)\b", r"\1", raw)
+    raw = re.sub(r"\bsept\b", "sep", raw)
 
     # Already a clean ISO date
     m = re.fullmatch(r"(\d{4})-(\d{1,2})-(\d{1,2})", raw)
@@ -52,12 +57,29 @@ def resolve_date(text: str, today: Optional[date] = None) -> Optional[str]:
         except ValueError:
             return None
 
-    # DD Mon YYYY (e.g. current year's format, not hardcoded)
-    for fmt in ("%d %b %Y", "%d %B %Y"):
+    # DD Mon YYYY or Mon DD YYYY ("17 nov 2026", "nov 17 2026")
+    for fmt in ("%d %b %Y", "%d %B %Y", "%b %d %Y", "%B %d %Y"):
         try:
             return datetime.strptime(raw, fmt).date().isoformat()
         except ValueError:
             continue
+
+    # Day and month with no year ("17 nov", "nov 17"): the next time that
+    # date comes round, today included. A leap year is added for parsing
+    # only, so "29 feb" can be read before the year is chosen.
+    for fmt in ("%d %b", "%d %B", "%b %d", "%B %d"):
+        try:
+            dm = datetime.strptime(f"{raw} 2000", f"{fmt} %Y")
+        except ValueError:
+            continue
+        for year in (today.year, today.year + 1, today.year + 2, today.year + 3, today.year + 4):
+            try:
+                d = date(year, dm.month, dm.day)
+            except ValueError:  # 29 Feb outside a leap year
+                continue
+            if d >= today:
+                return d.isoformat()
+        return None
 
     # Relative keywords
     if raw in ("today", "tdy"):

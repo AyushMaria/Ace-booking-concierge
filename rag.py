@@ -90,18 +90,18 @@ def seed_knowledge(replace: bool = True):
         {
             "category": "date_rules",
             "text": (
-                "DATE RESOLUTION RULES:\n"
-                "RULE 1 — Never guess a date. If the customer says "
-                "'tomorrow', 'this Saturday', 'next Monday', first compute the "
-                "exact YYYY-MM-DD using today's date from the system prompt.\n"
-                "RULE 2 — Before calling create_booking, state the resolved "
-                "date back as 'DD Mon YYYY' and wait for the customer to "
+                "DATE RULES:\n"
+                "RULE 1 — Pass the customer's own words for the date to the "
+                "tools ('tomorrow', 'this Saturday', 'next Monday', '17 Nov'). "
+                "The tools work out the exact date; never calculate it yourself.\n"
+                "RULE 2 — Before calling create_booking, read back the date the "
+                "tool reports, as 'DD Mon YYYY', and wait for the customer to "
                 "confirm. No booking on the same turn the date was given.\n"
-                "RULE 3 — Pass only the YYYY-MM-DD string to "
-                "check_available_slots and create_booking. Never pass words.\n"
+                "RULE 3 — If a tool says it cannot read the date, ask the "
+                "customer for the day and month, e.g. '17 Nov'.\n"
                 "RULE 4 — Past dates are invalid. Ask for a future date.\n"
-                "RULE 5 — If the customer gives a date you cannot map to a "
-                "single day (e.g. 'sometime next week'), ask for an exact date."
+                "RULE 5 — If the date could be more than one day (e.g. "
+                "'sometime next week'), ask for an exact date."
             )
         },
         {
