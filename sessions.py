@@ -1,7 +1,7 @@
 # sessions.py — full replacement
 from db import get_client
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 import pytz
 
 supabase = get_client()
@@ -14,61 +14,65 @@ def _today_ist_iso() -> str:
     return datetime.now(IST).strftime("%Y-%m-%d")
 
 
+MAX_HISTORY_MESSAGES = 20
+
+# Every message is stored with the time it was sent (agent.py stamps it) and
+# Ace sees that time, so an old "booked for today" reads as old. Past a week
+# the context is more likely to mislead than help, so it is dropped.
+MAX_HISTORY_AGE = timedelta(days=7)
+
+
+def _parse_ts(value):
+    """Stored ISO timestamp -> aware datetime, or None if missing/unreadable."""
+    if not value:
+        return None
+    try:
+        ts = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return IST.localize(ts) if ts.tzinfo is None else ts
+
+
 def get_session(phone: str) -> list:
-    """Return conversation history, annotating any cross-day rollover.
-    If the stored session_date differs from today's IST date, a system
-    note is prepended to the returned history so the model treats prior
-    turns as prior-day context — not as a source for "today". History is
-    capped at MAX_HISTORY_MESSAGES to avoid stale context bloat and
-    conflicting rollover notes are deduplicated before a new one is added.
+    """Return the conversation history Ace should see for this message.
+
+    Keeps the last MAX_HISTORY_MESSAGES messages from the past week. Messages
+    saved before timestamps existed carry no time, so they are kept only on
+    the day they were written (session_date) and dropped after that: shown
+    undated on a later day they are what made Ace mistake a correct
+    confirmation from yesterday for a contradiction. Old "Date has changed"
+    system notes are dropped too; message times replace them.
     """
     today = _today_ist_iso()
 
-    # Try the new schema (with session_date). Fall back to history-only if the
-    # column hasn't been added yet (migration pending in Supabase SQL editor).
-    try:
-        result = (
-            supabase.table("sessions")
-            .select("history, session_date")
-            .eq("phone", phone)
-            .execute()
-        )
-    except Exception:
-        result = (
-            supabase.table("sessions")
-            .select("history")
-            .eq("phone", phone)
-            .execute()
-        )
-
+    result = (
+        supabase.table("sessions")
+        .select("history, session_date")
+        .eq("phone", phone)
+        .execute()
+    )
     if not result.data:
         return []
 
     row = result.data[0]
     history = row.get("history") or []
-    stored_date = row.get("session_date")
+    same_day = row.get("session_date") == today
+    cutoff = datetime.now(IST) - MAX_HISTORY_AGE
 
-    MAX_HISTORY_MESSAGES = 20
-    if len(history) > MAX_HISTORY_MESSAGES:
-        history = history[-MAX_HISTORY_MESSAGES:]
-        print(f"[get_session] Trimmed history for {phone} to last {MAX_HISTORY_MESSAGES} messages")
+    kept = []
+    for msg in history:
+        if msg.get("role") == "system":
+            continue
+        ts = _parse_ts(msg.get("ts"))
+        if ts is None:
+            if same_day:
+                kept.append(msg)
+        elif ts >= cutoff:
+            kept.append(msg)
 
-    # If session_date is missing or differs from today, annotate the rollover.
-    # Skip the annotation only when stored_date == today (same-day continuation).
-    if stored_date != today:
-        history = [
-            msg for msg in history
-            if not (msg.get("role") == "system" and msg.get("content", "").startswith("Date has changed:"))
-        ]
-        note_content = (
-            f"Date has changed: today is {today}. Treat any prior 'today' "
-            f"references in this conversation as belonging to {stored_date or 'an earlier date'}, "
-            f"not the current date. Use the system prompt's date as today.")
-        history = [{"role": "system", "content": note_content}] + history
-        print(f"[get_session] Rollover note replaced for {phone}: {stored_date} -> {today}")
-    else:
-        print(f"[get_session] No rollover for {phone}: stored_date={stored_date} == today={today}")
-    return history
+    if len(kept) != len(history):
+        print(f"[get_session] {phone}: dropped {len(history) - len(kept)} old or undated messages")
+    return kept[-MAX_HISTORY_MESSAGES:]
 
 
 def update_session(phone: str, history: list):

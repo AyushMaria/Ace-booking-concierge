@@ -12,7 +12,10 @@ from tools import (
     sync_website_customers, initiate_message
 )
 from datetime import datetime, timedelta
+import re
 import pytz
+
+IST = pytz.timezone("Asia/Kolkata")
 
 # Model is a setting so it can move between Sonnet and Haiku from Railway's
 # variables without a code change. ANTHROPIC_API_KEY is read from the
@@ -136,7 +139,30 @@ def get_system_prompt(phone: str = "", user_message: str = ""):
           Never invent an ID.
         - If the customer has more than one booking on a date, pass the slots of the
           one they mean to cancel_booking, or it will ask you which.
+
+        NEVER INVENT A CORRECTION:
+        - get_my_bookings lists bookings from today onwards only. A booking you
+          confirmed earlier that is missing from it has almost always just passed.
+          That is normal. Do not call it a mistake, a mix-up or wrong.
+        - Only tell a customer an earlier booking or confirmation was wrong if a tool
+          result in THIS turn says the booking failed, was cancelled, or does not
+          exist by its ID. Never apologise for an error no tool has reported.
+        - If you are unsure what the customer has booked, call get_my_bookings and
+          report what it shows, without commenting on what you said before.
+
+        {MESSAGE_TIMES}
         """
+
+MESSAGE_TIMES = """MESSAGE TIMES:
+        - Each message from the customer starts with when it was sent, in IST, like
+          [Thu 5 Nov 2026, 9:14 PM]. Only the latest message is from right now.
+        - Read every earlier message against its own date: "today", "tonight" or
+          "tomorrow" in a message sent on 5 Nov mean 5 Nov, 5 Nov and 6 Nov, whatever
+          today is. A confirmation sent yesterday for "today" was about yesterday.
+        - Availability, prices or plans from an earlier day are history. Check again
+          with the tools before relying on them.
+        - Never write these time stamps in your replies."""
+
 
 def get_admin_prompt():
     ist = pytz.timezone("Asia/Kolkata")
@@ -159,6 +185,8 @@ def get_admin_prompt():
         Today's date is {today} ({day_name}). Current IST time is {current_time_str}.
 
         {DATE_RULES}
+
+        {MESSAGE_TIMES.replace("the customer", "the owner")}
 
         You have full database access and can:
         - View all bookings for any date
@@ -221,8 +249,8 @@ def _system_message(prompt: str, notes: list[str]) -> SystemMessage:
 
     One message runs the agent loop two to four times in a few seconds with an
     identical prompt and tool list, so every call after the first reads them
-    from Anthropic's prompt cache. The rollover note changes daily, so it goes
-    in a block after the breakpoint and never invalidates the cached part.
+    from Anthropic's prompt cache. Any system notes from the history go in
+    blocks after the breakpoint so they never invalidate the cached part.
     """
     blocks = [{"type": "text", "text": prompt, "cache_control": {"type": "ephemeral"}}]
     for note in notes:
@@ -230,8 +258,34 @@ def _system_message(prompt: str, notes: list[str]) -> SystemMessage:
     return SystemMessage(content=blocks)
 
 
+def _now_ts() -> str:
+    """When a message is stored: IST, to the second, with its offset."""
+    return datetime.now(IST).isoformat(timespec="seconds")
+
+
+def _time_label(ts) -> str:
+    """'2026-11-05T21:14:03+05:30' -> '[Thu 5 Nov 2026, 9:14 PM]'; '' if unusable."""
+    if not ts:
+        return ""
+    try:
+        dt = datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
+    except ValueError:
+        return ""
+    dt = IST.localize(dt) if dt.tzinfo is None else dt.astimezone(IST)
+    return f"[{dt:%a} {dt.day} {dt:%b %Y}, {dt.hour % 12 or 12}:{dt:%M %p}]"
+
+
+# A reply that copies the stamp format back at the customer.
+_ECHOED_STAMP = re.compile(
+    r"^\s*\[(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun) \d{1,2} [A-Z][a-z]{2} \d{4}, \d{1,2}:\d{2} [AP]M\]\s*"
+)
+
+
 def _claude_safe(history: list) -> tuple[list[str], list[dict]]:
     """Split stored history into system notes and a conversation Claude accepts.
+
+    Customer messages are prefixed with the time they were sent (stored as
+    "ts"), so Ace can tell yesterday's "today" from today's.
 
     Gemini tolerated history shapes the Anthropic API rejects outright, and a
     rejected history fails every later message for that customer, not just one:
@@ -255,6 +309,10 @@ def _claude_safe(history: list) -> tuple[list[str], list[dict]]:
             continue
         if not convo and role != "user":
             continue
+        if role == "user":
+            label = _time_label(msg.get("ts"))
+            if label:
+                text = f"{label} {text}"
         if convo and convo[-1]["role"] == role:
             convo[-1]["content"] += "\n\n" + text
         else:
@@ -278,6 +336,7 @@ def _invoke(tools: list, prompt: str, history: list, label: str) -> str:
     result = agent.invoke({"messages": convo})
     ai_messages = [m for m in result["messages"] if getattr(m, "type", None) == "ai"]
     reply = _parse_reply(ai_messages[-1].content) if ai_messages else ""
+    reply = _ECHOED_STAMP.sub("", reply)
     if not reply.strip():
         # Never let a blank reply into the stored history: Claude rejects empty
         # messages, so it would break every later turn for this customer.
@@ -288,7 +347,7 @@ def _invoke(tools: list, prompt: str, history: list, label: str) -> str:
 
 def run_agent(phone: str, user_message: str, history: list) -> tuple[str, list]:
     """Run the customer agent."""
-    history.append({"role": "user", "content": user_message})
+    history.append({"role": "user", "content": user_message, "ts": _now_ts()})
     print(f"[run_agent] history head for {phone}: {history[:2]}")
     print(f"[run_agent] history tail for {phone}: {history[-3:]}")
 
@@ -301,13 +360,13 @@ def run_agent(phone: str, user_message: str, history: list) -> tuple[str, list]:
         print(f"[run_agent error] {type(e).__name__}: {e}")
         reply = FALLBACK_REPLY
 
-    history.append({"role": "assistant", "content": reply})
+    history.append({"role": "assistant", "content": reply, "ts": _now_ts()})
     return reply, history
 
 
 def run_admin_agent(phone: str, user_message: str, history: list) -> tuple[str, list]:
     """Run the admin agent."""
-    history.append({"role": "user", "content": user_message})
+    history.append({"role": "user", "content": user_message, "ts": _now_ts()})
 
     try:
         reply = _invoke(admin_tools, get_admin_prompt(), history, "run_admin_agent")
@@ -315,7 +374,7 @@ def run_admin_agent(phone: str, user_message: str, history: list) -> tuple[str, 
         print(f"[run_admin_agent error] {type(e).__name__}: {e}")
         reply = FALLBACK_REPLY
 
-    history.append({"role": "assistant", "content": reply})
+    history.append({"role": "assistant", "content": reply, "ts": _now_ts()})
     return reply, history
 
 

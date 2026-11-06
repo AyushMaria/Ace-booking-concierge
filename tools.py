@@ -793,7 +793,9 @@ def cancel_booking(phone: str, booking_date: str, slots: List[str] = None) -> st
 @tool
 def get_my_bookings(phone: str) -> str:
     """
-    Get all upcoming bookings for a phone number.
+    Get this phone number's bookings from today onwards. Bookings on earlier
+    dates are not listed, so a booking that has already happened will not
+    appear here; that is expected, not a sign it never existed.
     """
     try:
         today = datetime.now(IST).date().isoformat() 
@@ -807,7 +809,11 @@ def get_my_bookings(phone: str) -> str:
             .execute()
 
         if not result.data:
-            return "No upcoming bookings found for this number."
+            return (
+                "No bookings for this number from today onwards. Bookings on earlier "
+                "dates are not listed, so a past booking being absent here is normal "
+                "and does not mean it was wrong or never existed."
+            )
 
         lines = []
         for b in result.data:
@@ -817,7 +823,7 @@ def get_my_bookings(phone: str) -> str:
                 f"🆔 {b['id']} | 📅 {b['booking_date']} | {block} | "
                 f"{', '.join(slots)} | ₹{b['total_price']}"
             )
-        return "Your upcoming bookings:\n" + "\n".join(lines)
+        return "Bookings from today onwards (earlier dates are not listed):\n" + "\n".join(lines)
 
     except Exception as e:
         return f"Error fetching bookings: {str(e)}"

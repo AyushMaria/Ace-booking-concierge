@@ -38,7 +38,7 @@ The agent runs on **Claude Sonnet 5.5** (set by `ANTHROPIC_MODEL`) via LangChain
 Ace has been hardened against date hallucination — a failure mode where the LLM computes "today" incorrectly across long-running or multi-day WhatsApp conversations. Key safeguards now in place:
 
 - **Deterministic date resolution** — `resolve_date()` in `tools.py` parses natural phrases ("today", "tomorrow", "next friday", DD Mon YYYY) into strict ISO dates server-side, rather than relying on the LLM's own date arithmetic.
-- **Session rollover deduplication** — `sessions.py` strips any stale "date has changed" system notes before injecting a fresh one, preventing conflicting anchors from stacking up in long conversations.
+- **Timestamped history** — every stored message carries the time it was sent, and Ace sees each customer message prefixed with it (`[Thu 5 Nov 2026, 9:14 PM]`), so "today" in yesterday's messages is read as yesterday. History older than 7 days is dropped.
 - **History capping** — conversation history per user is capped to a fixed number of recent messages to reduce stale-context bleed and token overhead.
 - **Dynamic prompt examples** — example dates shown to the LLM in prompts and tool docstrings are computed relative to the current date rather than hardcoded, preventing year/date drift.
 - **Diagnostic logging** — key checkpoints (`get_session`, `get_system_prompt`, `check_available_slots`) log the raw and resolved date values for traceability in production logs (Railway).
@@ -66,7 +66,7 @@ Ace-booking-concierge/
 ├── agent.py             # LangGraph agent setup, system prompts (customer + admin), run functions
 ├── tools.py             # LangChain tools: booking CRUD, slot checks, promo codes, date resolution
 ├── rag.py               # RAG knowledge base: FAQ/policy chunks, embedding + retrieval logic
-├── sessions.py          # Per-user session/history management, date-rollover handling
+├── sessions.py          # Per-user session/history: timestamped messages, 7-day window
 ├── reminders.py         # WhatsApp booking reminder logic (approved template messages)
 ├── reminder_script.py   # Standalone/cron-triggered reminder dispatch script
 ├── requirements.txt     # Python dependencies
@@ -136,7 +136,7 @@ This project is pre-configured for Railway:
 
 1. A WhatsApp message arrives at the `/webhook` endpoint via Twilio.
 2. `main.py` normalizes the sender's phone number at the entry point before any downstream processing.
-3. `sessions.py` retrieves the conversation history for that phone number, deduplicating and injecting a date-rollover note if the session is stale.
+3. `sessions.py` retrieves the conversation history for that phone number: the last 20 messages from the past 7 days, each with the time it was sent.
 4. If the sender matches `ADMIN_PHONE`, the **admin agent** is invoked; otherwise the **customer agent** runs.
 5. `rag.py` retrieves relevant knowledge chunks (FAQs, policies) to supplement the system prompt for that turn.
 6. The LangGraph `create_react_agent` reasons over the conversation and calls tools from `tools.py` as needed (slot checks, booking CRUD, promo codes).
