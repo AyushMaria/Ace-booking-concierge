@@ -120,6 +120,7 @@ twilio_client = Client(
 
 TWILIO_NUMBER = os.getenv("TWILIO_WHATSAPP_NUMBER")
 WHATSAPP_INIT_TEMPLATE_SID = os.getenv("WHATSAPP_INIT_TEMPLATE_SID")
+WHATSAPP_APOLOGY_TEMPLATE_SID = os.getenv("WHATSAPP_APOLOGY_TEMPLATE_SID")
 TWILIO_STATUS_CALLBACK_URL = os.getenv("TWILIO_STATUS_CALLBACK_URL")
 
 ACE_GREETING_MESSAGE = (
@@ -370,17 +371,11 @@ def slot_has_started(booking_date: str, slot: str, now: datetime = None) -> bool
         return False
     return IST.localize(slot_start) <= now
 
-@tool
-def initiate_message(phone: str) -> str:
-    """
-    Admin only: Send Ace's standard greeting to a WhatsApp number
-    using an approved WhatsApp template.
+def _send_template(phone: str, content_sid: str, variables: dict, message_type: str, sid_env: str) -> str:
+    """Send an approved WhatsApp template and log it in outbound_messages.
 
-    Use when the admin says:
-    - "Send a message to +919876543210"
-    - "Initiate a message to 9876543210"
-
-    This sends only the standard greeting and does not create a booking.
+    Templates are the only way to message someone more than 24 hours after
+    their last message; plain text outside that window fails with 63016.
     """
     try:
         canonical_phone = normalize_phone(phone)
@@ -396,22 +391,20 @@ def initiate_message(phone: str) -> str:
         if not TWILIO_NUMBER:
             return "❌ Twilio WhatsApp number is not configured."
 
-        if not WHATSAPP_INIT_TEMPLATE_SID:
-            return "❌ WhatsApp initiation template SID is not configured."
+        if not content_sid:
+            return f"❌ {sid_env} is not set in Railway, so this template can't be sent yet."
 
         message = twilio_client.messages.create(
             from_=TWILIO_NUMBER,
             to=f"whatsapp:{canonical_phone}",
-            content_sid=WHATSAPP_INIT_TEMPLATE_SID,
-            content_variables=json.dumps({
-                "1": "there"
-            }),
+            content_sid=content_sid,
+            content_variables=json.dumps(variables),
             status_callback=TWILIO_STATUS_CALLBACK_URL
         )
 
         supabase.table("outbound_messages").insert({
             "to_phone": canonical_phone,
-            "message_type": "initiate_message",
+            "message_type": message_type,
             "twilio_sid": message.sid,
             "initial_status": message.status,
             "final_status": None,
@@ -420,7 +413,7 @@ def initiate_message(phone: str) -> str:
         }).execute()
 
         return (
-            f"⏳ Initiation accepted for {canonical_phone}. "
+            f"⏳ Accepted for {canonical_phone}. "
             f"Twilio SID: {message.sid}. Current status: {message.status}. "
             f"Delivery is still pending."
         )
@@ -430,12 +423,45 @@ def initiate_message(phone: str) -> str:
 
         if "63016" in error_text:
             return (
-                "❌ Failed to initiate message because this WhatsApp send is outside "
-                "the 24-hour customer window and no valid approved template was used. "
-                "Please configure and use a WhatsApp Content Template."
+                "❌ Failed: this send is outside the 24-hour customer window and no valid "
+                "approved template was used. Check the template SID and its approval in Twilio."
             )
 
-        return f"❌ Failed to send initiation message: {error_text}"
+        return f"❌ Failed to send: {error_text}"
+
+
+@tool
+def initiate_message(phone: str) -> str:
+    """
+    Admin only: Send Ace's standard greeting to a WhatsApp number
+    using an approved WhatsApp template.
+
+    Use when the admin says:
+    - "Send a message to +919876543210"
+    - "Initiate a message to 9876543210"
+
+    This sends only the standard greeting and does not create a booking.
+    """
+    return _send_template(phone, WHATSAPP_INIT_TEMPLATE_SID, {"1": "there"},
+                          "initiate_message", "WHATSAPP_INIT_TEMPLATE_SID")
+
+
+@tool
+def send_apology_message(phone: str, name: str = "") -> str:
+    """
+    Admin only: Send the "sorry we missed your message, Ace is back online"
+    WhatsApp template to a customer whose message went unanswered.
+
+    Use when the admin says:
+    - "Send the apology to +919876543210"
+    - "Send sorry message to 9876543210 (Faiz)"
+
+    name is the customer's first name if known; leave it empty otherwise and
+    the message greets them as "there". This does not create a booking.
+    """
+    first = (name or "").strip().split(" ")[0] or "there"
+    return _send_template(phone, WHATSAPP_APOLOGY_TEMPLATE_SID, {"1": first},
+                          "apology", "WHATSAPP_APOLOGY_TEMPLATE_SID")
 
 @tool
 def check_available_slots(booking_date: str) -> str:

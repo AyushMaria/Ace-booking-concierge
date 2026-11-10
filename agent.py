@@ -9,7 +9,7 @@ from tools import (
     get_bookings_by_phone, get_bookings_by_name, create_promo_code,
     edit_booking, edit_booking_total, get_revenue, edit_promo_code,
     get_customer_by_phone, create_customer_profile,
-    sync_website_customers, initiate_message
+    sync_website_customers, initiate_message, send_apology_message
 )
 from datetime import datetime, timedelta
 import re
@@ -44,7 +44,8 @@ admin_tools = [
     get_all_bookings, delete_booking_by_id, block_slots, get_booking_stats,
     get_bookings_by_phone, get_bookings_by_name, create_promo_code,
     edit_booking, edit_booking_total, get_revenue, edit_promo_code,
-    get_customer_by_phone, sync_website_customers, initiate_message
+    get_customer_by_phone, sync_website_customers, initiate_message,
+    send_apology_message
 ]
 
 def get_system_prompt(phone: str = "", user_message: str = ""):
@@ -214,6 +215,13 @@ def get_admin_prompt():
                 - If the tool reports pending, tell me delivery confirmation is still awaited.
                 - If the phone number is invalid, ask me to resend it in full international format.
                 - Never use initiate_message(phone) in customer mode.
+        - send_apology_message(phone, name) — send the approved "sorry we missed your
+          message, Ace is back online" template to a customer who got no reply
+            - If I give a name, pass the first name; otherwise leave name empty.
+            - If I give several numbers, call it once per number and list each result.
+            - The same reporting rules as initiate_message apply: accepted or queued is
+              pending, not delivered.
+            - Never use it in customer mode.
         - get_bookings_by_phone(phone) — view all bookings for a specific customer number
         - get_bookings_by_name(names) — search bookings by customer name (partial match)
         - create_promo_code(code, discount_type, discount_value, ...) — create a new promo code
